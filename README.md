@@ -17,9 +17,9 @@ The arrows show available links. Each user sees pages allowed by their assigned 
 flowchart TD
     accTitle: BuildSupply Hub website sitemap
     accDescr: Home opens core public discovery and sign-in. Sign-in provides role-scoped buyer, supplier, and operator menus. Read top to bottom. The upper-right priority key marks blue core functions, white navigation pages, and gray dashed later expansions. Visual priority does not change the agreed P0 release scope.
-    HOME["Home"]
-    CATALOG["Catalog"]
-    RESULTS["Search<br/>results"]
+    HOME["Home<br/>(Yi Jie)"]
+    CATALOG["Catalog<br/>(Yi Jie)"]
+    RESULTS["Search<br/>results<br/>(Yi Jie)"]
     CATEGORY["Material<br/>category"]
     SPEC["Material<br/>specification"]
     LOGIN["Sign in"]
@@ -33,14 +33,14 @@ flowchart TD
     %% Search results
     SUPPLIER_PROFILE["Supplier<br/>profile"]
     COMPARE["Product<br/>comparison"]
-    RFQ["RFQ<br/>action"]
+    QUICK_RFQ["RFQ<br/>action"]
 
     RESULTS --> SUPPLIER_PROFILE
     RESULTS --> COMPARE
     RESULTS --> QUICK_RFQ
 
     subgraph OPERATOR["PLATFORM ADMINISTRATION"]
-        O_MENU(["Operator menu"])
+        O_MENU(["Operator menu<br/>(Yi Jie)"])
         O_FEES["Hub fee<br/>ledger"]
         O_FEE["Fee entry<br/>detail"]
         O_ONBOARDING["Supplier<br/>onboarding"]
