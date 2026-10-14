@@ -22,7 +22,7 @@ flowchart TD
     RESULTS["Search<br/>results<br/>(Yi Jie)"]
     CATEGORY["Material<br/>category"]
     SPEC["Material<br/>specification"]
-    LOGIN["Sign in"]
+    LOGIN["Sign In<br/>(Arn.)"]
 
     HOME --> CATALOG
     HOME -->|Search| RESULTS
@@ -53,7 +53,7 @@ flowchart TD
     end
 
     subgraph SUPPLIER["SUPPLIER TEAM"]
-        S_MENU(["Supplier menu"])
+        S_MENU(["Supplier menu<br/>(Arn.)"])
         S_INVITATIONS["RFQ<br/>invitations"]
         S_RFQ["Invited RFQ<br/>detail"]
         S_QUOTE["Quote editor"]
@@ -74,7 +74,7 @@ flowchart TD
     end
 
     subgraph BUYER["CONTRACTOR TEAM"]
-        B_MENU(["Contractor menu"])
+        B_MENU(["Contractor menu<br/>(Arn.)"])
         B_DASH["Dashboard"]
         B_RFQS["RFQs"]
         B_CREATE["Create RFQ"]
