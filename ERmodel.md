@@ -1,8 +1,10 @@
 # BuildSupply Hub ER Model
 
-RFQ and Organization settings model from Page-2 of `BuildSupply Hub Sitemap.drawio`.
+RFQ, Organization settings, and Payments and returns model from Page-2 of `BuildSupply Hub Sitemap.drawio`.
 
 This view shows the main relationships. Actor foreign keys remain listed even where their connectors are omitted.
+
+`PurchaseOrder`, `POLine`, and `GoodsPortion` are reference entities; their detailed upstream models are still pending.
 
 ```mermaid
 erDiagram
@@ -253,4 +255,178 @@ erDiagram
     %% Preserve grant history; prevent overlapping duplicate member/role/scope grants.
     %% Protect the last active organization admin; rejoining does not restore revoked grants.
     %% Prepared Project/Jobsite data support MVP US01; self-service creation remains outside P0.
+
+    %% Payments and returns: proposed full detail for US17-US18, with shared fee support.
+    %% Actor FKs are retained as attributes; their extra AppUser lines are intentionally omitted.
+    Jobsite ||..o{ PurchaseOrder : scopes
+    Supplier ||..o{ PurchaseOrder : supplies
+    QuoteVersion ||..o{ PurchaseOrder : quoted_basis
+    PurchaseOrder ||..o{ POLine : contains
+    POLine ||..o{ GoodsPortion : apportioned_as
+    PurchaseOrder ||..o{ ProviderPaymentAttempt : checkout_attempts
+    ProviderPaymentAttempt ||..o{ PaymentAttemptAllocation : intends
+    GoodsPortion ||..o{ PaymentAttemptAllocation : requested_for
+    ProviderPaymentAttempt ||..o{ ProviderTransaction : confirmed_transactions
+    ProviderTransaction ||..o{ PaymentAllocation : allocates
+    GoodsPortion ||..o{ PaymentAllocation : paid_for
+    PurchaseOrder ||..o{ GoodsReturn : returned_under
+    GoodsReturn ||..o{ GoodsReturnLine : contains
+    PaymentAllocation ||..o{ GoodsReturnLine : returned_from
+    ProviderTransaction ||..o{ Refund : refunded_by
+    Refund ||..o{ RefundAllocation : allocates
+    GoodsReturnLine ||..o{ RefundAllocation : refunded_for
+    PaymentProviderAccount ||..o{ ProviderPaymentAttempt : processes
+    PaymentProviderAccount ||..o{ ProviderEvent : emits
+    ProviderEvent ||..o{ ProviderTransaction : confirms
+    ProviderEvent o|..o{ Refund : confirms_when_successful
+    PaymentAllocation o|..o| CommissionEntry : charge_entry
+    RefundAllocation o|..o| CommissionEntry : reversal_entry
+
+    PurchaseOrder {
+        int po_id PK "REFERENCE ONLY"
+        int jobsite_id FK
+        int supplier_id FK
+        int quote_version_id FK
+    }
+    POLine {
+        int po_line_id PK "REFERENCE ONLY"
+        int po_id FK
+    }
+    GoodsPortion {
+        int goods_portion_id PK "REFERENCE ONLY"
+        int po_line_id FK
+    }
+    ProviderPaymentAttempt {
+        int payment_attempt_id PK
+        int po_id FK
+        int provider_account_id FK
+        int initiated_by_user_id FK
+        string request_key UK
+        decimal requested_gross_amount
+        string currency_code
+        string status
+        datetime created_at
+        datetime last_checked_at "optional"
+        string failure_reason "optional"
+    }
+    PaymentAttemptAllocation {
+        int attempt_allocation_id PK
+        int payment_attempt_id FK
+        int goods_portion_id FK
+        decimal quantity
+        decimal net_goods_amount
+        decimal tax_amount
+        decimal freight_amount
+        decimal other_charge_amount
+    }
+    ProviderTransaction {
+        int transaction_id PK
+        int payment_attempt_id FK
+        string provider_transaction_key UK "provider/account scoped"
+        decimal gross_amount
+        string currency_code
+        datetime confirmed_at
+        int confirmation_event_id FK
+        string reconciliation_status
+    }
+    PaymentAllocation {
+        int payment_allocation_id PK
+        int transaction_id FK
+        int goods_portion_id FK
+        decimal paid_quantity
+        decimal net_goods_amount
+        decimal tax_amount
+        decimal freight_amount
+        decimal other_charge_amount
+    }
+    GoodsReturn {
+        int return_id PK
+        int po_id FK
+        int created_by_user_id FK
+        string workflow_status
+        datetime created_at
+    }
+    GoodsReturnLine {
+        int return_line_id PK
+        int return_id FK
+        int payment_allocation_id FK
+        decimal quantity
+        string reason_text
+        string return_status
+        datetime returned_at "optional until confirmed"
+    }
+    Refund {
+        int refund_id PK
+        int transaction_id FK
+        int requested_by_user_id FK
+        string request_key UK
+        string provider_refund_key UK "optional; provider/account scoped"
+        decimal requested_gross_amount
+        decimal confirmed_gross_amount "optional until confirmed"
+        string status
+        datetime requested_at
+        datetime confirmed_at "optional until confirmed"
+        int confirmation_event_id FK "optional until confirmed"
+    }
+    RefundAllocation {
+        int refund_allocation_id PK
+        int refund_id FK
+        int return_line_id FK
+        decimal quantity
+        decimal net_goods_amount
+        decimal tax_amount
+        decimal freight_amount
+        decimal other_charge_amount
+    }
+    PaymentProviderAccount {
+        int provider_account_id PK
+        string provider_code
+        string account_reference
+        string status
+    }
+    ProviderEvent {
+        int event_id PK
+        int provider_account_id FK
+        string provider_event_key UK "provider/account scoped"
+        string event_type
+        string provider_object_key
+        datetime occurred_at
+        datetime received_at
+        string verification_status
+        datetime processed_at "optional until applied"
+        string payload_reference
+    }
+    CommissionEntry {
+        int commission_entry_id PK
+        int payment_allocation_id FK, UK "optional; CHARGE only"
+        int refund_allocation_id FK, UK "optional; REVERSAL only"
+        string entry_type
+        decimal rate_used
+        decimal posted_amount "signed ledger amount"
+        datetime created_at
+    }
+
+    %% REFERENCE ONLY: PurchaseOrder/POLine/GoodsPortion are integration contracts, not completed upstream models.
+    %% PO revisions, approval, receipt/inspection evidence and accepted portion limits remain to be designed there.
+    %% UNIQUE PaymentAttemptAllocation(payment_attempt_id,goods_portion_id).
+    %% UNIQUE PaymentAllocation(transaction_id,goods_portion_id).
+    %% UNIQUE RefundAllocation(refund_id,return_line_id).
+    %% UNIQUE PaymentProviderAccount(provider_code,account_reference).
+    %% CommissionEntry: exactly one allocation FK; CHARGE uses payment, REVERSAL uses refund.
+    %% ProviderTransaction records only verified successful charges; unmatched charges remain reconciliation exceptions.
+    %% All allocations must agree on PO, goods portion, original payment, provider account and currency.
+    %% Reserve eligible unpaid portions for live attempts; UNKNOWN/PENDING must be reconciled before retry.
+    %% Requested/confirmed returns cannot exceed eligible remaining paid quantity.
+    %% Pending and confirmed refunds reserve only the remaining refundable quantity and amount.
+    %% Refund success requires verified provider evidence matching the original charge and account.
+    %% Enforce aggregate caps with transaction locking, not FK checks alone.
+    %% Dedupe both provider event keys and provider transaction/refund keys.
+    %% Attempt statuses: CREATED/PENDING/SUCCEEDED/FAILED/UNKNOWN.
+    %% Return workflow: DRAFT/SUBMITTED/CANCELLED; return lines: REQUESTED/CONFIRMED/CANCELLED.
+    %% Refund statuses: REQUESTED/PENDING/SUCCEEDED/FAILED/CANCELLED.
+    %% Only confirmed refunds create fee reversals; original charges and fee entries remain immutable.
+    %% Fee base excludes tax, freight and other charges; rate and provider terms remain unset.
+    %% Final full refund reverses the remaining original fee including rounding residue.
+    %% Store money as exact DECIMAL; no card credentials; actor permissions use existing scoped assignments.
+    %% This extension does not complete supplier payout/processing-charge models or full-product coverage.
 ```
