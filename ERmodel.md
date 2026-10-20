@@ -1,11 +1,15 @@
 # BuildSupply Hub ER Model
 
-RFQ model from Page-2 of `BuildSupply Hub Sitemap.drawio`.
+RFQ and Organization settings model from Page-2 of `BuildSupply Hub Sitemap.drawio`.
+
+This view shows the main relationships. Actor foreign keys remain listed even where their connectors are omitted.
 
 ```mermaid
 erDiagram
     direction LR
-    Organization ||..o{ Jobsite : owns
+    %% Simplified view: actor FK fields remain; only primary AppUser relationships are drawn.
+    Organization ||..o{ Project : owns
+    Project ||..o{ Jobsite : contains
     Jobsite ||..o{ RFQ : receives_requests
     AppUser ||..o{ RFQ : creates
     RFQ ||..o{ RFQItem : contains
@@ -15,19 +19,15 @@ erDiagram
     RFQ o|..o{ RFQ : replaces
     RFQ ||..o{ Invitation : invites_through
     Supplier ||..o{ Invitation : receives
-    AppUser ||..o{ Invitation : sends
     Invitation ||..o{ InvitationToken : issues
     Invitation ||..o| Quote : receives
     Quote ||..o{ QuoteVersion : versions
-    AppUser ||..o{ QuoteVersion : records
-    AppUser o|..o{ QuoteVersion : confirms
     QuoteVersion ||..o{ QuoteLine : prices
     RFQItem ||..o{ QuoteLine : quoted_for
     Unit ||..o{ QuoteLine : measures
     QuoteVersion ||..o{ QuoteCharge : adds
     RFQ ||..o| RFQSelection : selects
     QuoteVersion ||..o| RFQSelection : chosen_version
-    AppUser ||..o{ RFQSelection : selects
 
     Organization {
         int organization_id PK
@@ -36,12 +36,15 @@ erDiagram
     AppUser {
         int user_id PK
         string display_name
+        string email UK
+        datetime email_verified_at
     }
     Jobsite {
         int jobsite_id PK
-        int organization_id FK
+        int project_id FK
         string site_name
         string current_address
+        string status
     }
     Unit {
         int unit_id PK
@@ -145,4 +148,109 @@ erDiagram
         string selection_reason
         datetime selected_at
     }
+
+    %% Organization settings: membership, explicit roles and scoped access.
+    Organization ||..o{ Membership : has_members
+    AppUser ||..o{ Membership : joins
+    Organization ||..o{ MemberInvitation : invites
+    Membership ||..o{ MembershipEvent : records
+    Membership ||..o{ OrganizationRoleAssignment : receives
+    Role ||..o{ OrganizationRoleAssignment : assigned_as
+    Role ||--o{ RolePermission : grants
+    Permission ||--o{ RolePermission : included_in
+    Membership ||..o{ ProjectRoleAssignment : receives
+    Project ||..o{ ProjectRoleAssignment : scopes
+    Role ||..o{ ProjectRoleAssignment : assigned_as
+    Membership ||..o{ JobsiteRoleAssignment : receives
+    Jobsite ||..o{ JobsiteRoleAssignment : scopes
+    Role ||..o{ JobsiteRoleAssignment : assigned_as
+
+    Membership {
+        int membership_id PK
+        int organization_id FK
+        int user_id FK
+        string status
+        datetime joined_at
+    }
+    MemberInvitation {
+        int member_invitation_id PK
+        int organization_id FK
+        string invited_email
+        string token_hash UK
+        int invited_by_user_id FK
+        datetime created_at
+        datetime expires_at
+        int accepted_by_user_id FK "optional"
+        datetime accepted_at "optional"
+        datetime revoked_at "optional"
+    }
+    MembershipEvent {
+        int membership_event_id PK
+        int membership_id FK
+        int actor_user_id FK "optional for system"
+        string event_type
+        string reason_text
+        datetime occurred_at
+    }
+    Role {
+        int role_id PK
+        string role_code UK
+        string role_scope
+    }
+    Permission {
+        int permission_id PK
+        string permission_code UK
+    }
+    RolePermission {
+        int role_id PK, FK
+        int permission_id PK, FK
+    }
+    OrganizationRoleAssignment {
+        int org_role_assignment_id PK
+        int membership_id FK
+        int role_id FK
+        int granted_by_user_id FK
+        datetime granted_at
+        int revoked_by_user_id FK "optional"
+        datetime revoked_at "optional"
+    }
+    Project {
+        int project_id PK
+        int organization_id FK
+        string project_name
+        string status
+    }
+    ProjectRoleAssignment {
+        int project_role_assignment_id PK
+        int membership_id FK
+        int project_id FK
+        int role_id FK
+        int granted_by_user_id FK
+        datetime granted_at
+        datetime valid_from
+        datetime valid_until "optional"
+        int revoked_by_user_id FK "optional"
+        datetime revoked_at "optional"
+    }
+    JobsiteRoleAssignment {
+        int jobsite_role_assignment_id PK
+        int membership_id FK
+        int jobsite_id FK
+        int role_id FK
+        int granted_by_user_id FK
+        datetime granted_at
+        datetime valid_from
+        datetime valid_until "optional"
+        int revoked_by_user_id FK "optional"
+        datetime revoked_at "optional"
+    }
+
+    %% UNIQUE Membership(organization_id,user_id).
+    %% Each scoped assignment must belong to its membership organization.
+    %% Organization admin does not automatically authorize purchases or PO approval.
+    %% Project grants cover child jobsites; jobsite grants cover only that site.
+    %% Evaluate active membership, effective unrevoked grants and permission on every action.
+    %% Preserve grant history; prevent overlapping duplicate member/role/scope grants.
+    %% Protect the last active organization admin; rejoining does not restore revoked grants.
+    %% Prepared Project/Jobsite data support MVP US01; self-service creation remains outside P0.
 ```
