@@ -1,10 +1,12 @@
 # BuildSupply Hub ER Model
 
-RFQ, Organization settings, Purchase orders, Payments and returns, and Deliveries and inspections model from Page-2 of `BuildSupply Hub Sitemap.drawio`.
+RFQ, Organization settings, Purchase orders, Payments and returns, Deliveries and inspections, and Supplier history model from Page-2 of `BuildSupply Hub Sitemap.drawio`.
 
 This view shows the main relationships. Actor foreign keys remain listed even where their connectors are omitted.
 
 Purchase orders now include revision-specific approval, issue, supplier acknowledgement, and provider-limit evidence. `GoodsPortionAuthorization` records the authorized quantity of each stable goods portion for each PO revision.
+
+Supplier history adds `POOutcome` for final delivery/inspection outcomes and append-only `POOutcomeReview` for evidence eligibility. Private summaries and metrics are computed from source records; changed evidence requires review.
 
 ```mermaid
 erDiagram
@@ -697,4 +699,57 @@ erDiagram
     %% Supplier estimates do not amend contractual promises or establish physical arrival/inspection.
     %% Declaration corrections preserve prior statements and must stay within the same PO.
     %% Goods receipt, acceptance, payment, refund and payout remain separate facts; replacement handling remains excluded.
+
+    %% Supplier history: private outcome facts. Summaries below are computed views, not stored entity tables.
+    POOutcome {
+        int po_outcome_id PK
+        int po_id FK, UK
+        datetime closed_at
+        string closure_kind
+        int confirmed_by_user_id FK
+        datetime recorded_at
+        string reason_text
+        string request_key UK
+    }
+    POOutcomeReview {
+        int outcome_review_id PK
+        int po_id FK
+        string review_status
+        int reviewed_by_user_id FK
+        datetime reviewed_at
+        string reason_text
+        string evidence_reference "optional"
+        string source_fingerprint
+        int supersedes_review_id FK, UK "optional; previous review"
+        string request_key UK
+    }
+    PurchaseOrder ||..o| POOutcome : finalized_by
+    PurchaseOrder ||..o{ POOutcomeReview : reviewed_in
+    POOutcomeReview o|..o| POOutcomeReview : superseded_by
+
+    %% POOutcome confirms a final delivery/inspection outcome, not settlement, waiver or authority to cancel.
+    %% closure_kind: COMPLETED/CLOSED_SHORT/CANCELLED. Cancellation requires actual agreement evidence.
+    %% One main final outcome per PO. Never overwrite agreed quantities, erase payments or infer supplier payout from closure.
+    %% review_status: CONFIRMED/DISPUTED/INCOMPLETE. Append-only reviews preserve prior reasons and source evidence.
+    %% Review predecessor must be in the same PO; allow one root and one unbranched current chain, with no cycles.
+    %% The current review fingerprint covers the relevant source values/versions. Changed evidence displays Needs review until reconfirmed.
+    %% Review facts support evidence quality; a complete dispute workflow and full US23 restatement workflow remain outside MVP.
+    %% SupplierHistorySummary and SupplierOrderOutcome are computed views, not persistent summary entities.
+    %% Derive supplier from PO and organization through PO->Jobsite->Project->Organization. Apply scoped permissions before aggregation.
+    %% History sources: supplier-acknowledged PORevision/lines and GoodsPortionAuthorization, DeliveryRevision arrival,
+    %% ReceiptPortionRevision quantities, effective AcceptanceDecision and confirmed GoodsReturnLine.
+    %% Preserve the first supplier-accepted promise as original baseline; display later accepted promises separately.
+    %% D17 history window: previous 12 months. Proposed cohort anchor is POOutcome.closed_at relative to report as-of date.
+    %% Show actual date bounds and recency. One PO counts once; overlapping exclusion-reason counts are not an additive denominator.
+    %% Eligible: supplier acknowledged, known original deadline, final outcome, current CONFIRMED review matching source fingerprint,
+    %% comparable line quantities/units and complete inspection evidence. CLOSED_SHORT with complete evidence remains a failure.
+    %% Display open/overdue, cancelled/partly cancelled, disputed, incomplete and noncomparable orders separately from eligible metrics.
+    %% Proposed on-time rule: inspection-accepted goods physically arrived in full for every original line by its original deadline.
+    %% Use actual arrival times of accepted quantities, not inspection completion times; compare each line/unit without mixing units.
+    %% Use effective versions and latest decision snapshots, never add multiple revisions of the same quantity or decision.
+    %% Quantity/specification/unit changes without a validated comparable mapping are shown separately; revised deadlines do not erase lateness.
+    %% Show returns and inspection outcomes separately; refund/payment/payout success neither establishes nor erases physical delivery history.
+    %% Zero eligible orders: N/A. One to four: counts and Insufficient history, no percentage. Five or more: descriptive percentage.
+    %% Always show numerator, denominator, recency and authorized PO drilldown. Never store manually edited history scores.
+    %% US22 P0 private supplier history supports US08; MVP does not include full US23 historical restatement tooling.
 ```
