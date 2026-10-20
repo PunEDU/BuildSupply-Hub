@@ -1,10 +1,10 @@
 # BuildSupply Hub ER Model
 
-RFQ, Organization settings, Payments and returns, and Deliveries and inspections model from Page-2 of `BuildSupply Hub Sitemap.drawio`.
+RFQ, Organization settings, Purchase orders, Payments and returns, and Deliveries and inspections model from Page-2 of `BuildSupply Hub Sitemap.drawio`.
 
 This view shows the main relationships. Actor foreign keys remain listed even where their connectors are omitted.
 
-`PurchaseOrder` and `POLine` are reference entities; their detailed upstream models are still pending. `GoodsPortion` now defines a stable part of the approved purchase obligation.
+Purchase orders now include revision-specific approval, issue, supplier acknowledgement, and provider-limit evidence. `GoodsPortionAuthorization` records the authorized quantity of each stable goods portion for each PO revision.
 
 ```mermaid
 erDiagram
@@ -260,10 +260,8 @@ erDiagram
     %% Actor FKs are retained as attributes; their extra AppUser lines are intentionally omitted.
     Jobsite ||..o{ PurchaseOrder : scopes
     Supplier ||..o{ PurchaseOrder : supplies
-    QuoteVersion ||..o{ PurchaseOrder : quoted_basis
     PurchaseOrder ||..o{ POLine : contains
     POLine ||..o{ GoodsPortion : apportioned_as
-    PurchaseOrder ||..o{ ProviderPaymentAttempt : checkout_attempts
     ProviderPaymentAttempt ||..o{ PaymentAttemptAllocation : intends
     GoodsPortion ||..o{ PaymentAttemptAllocation : requested_for
     ProviderPaymentAttempt ||..o{ ProviderTransaction : confirmed_transactions
@@ -275,7 +273,6 @@ erDiagram
     ProviderTransaction ||..o{ Refund : refunded_by
     Refund ||..o{ RefundAllocation : allocates
     GoodsReturnLine ||..o{ RefundAllocation : refunded_for
-    PaymentProviderAccount ||..o{ ProviderPaymentAttempt : processes
     PaymentProviderAccount ||..o{ ProviderEvent : emits
     ProviderEvent ||..o{ ProviderTransaction : confirms
     ProviderEvent o|..o{ Refund : confirms_when_successful
@@ -283,24 +280,28 @@ erDiagram
     RefundAllocation o|..o| CommissionEntry : reversal_entry
 
     PurchaseOrder {
-        int po_id PK "REFERENCE ONLY"
+        int po_id PK
+        string po_number UK
+        int rfq_id FK, UK
         int jobsite_id FK
         int supplier_id FK
-        int quote_version_id FK
+        int created_by_user_id FK
+        datetime created_at
     }
     POLine {
-        int po_line_id PK "REFERENCE ONLY"
+        int po_line_id PK
         int po_id FK
+        int line_no
+        int rfq_item_id FK
+        int origin_po_line_id FK "optional; unreceived remainder"
     }
     GoodsPortion {
         int goods_portion_id PK
         int po_line_id FK
-        decimal authorized_quantity
     }
     ProviderPaymentAttempt {
         int payment_attempt_id PK
-        int po_id FK
-        int provider_account_id FK
+        int po_issue_id FK
         int initiated_by_user_id FK
         string request_key UK
         decimal requested_gross_amount
@@ -408,8 +409,7 @@ erDiagram
         datetime created_at
     }
 
-    %% REFERENCE ONLY: PurchaseOrder/POLine are integration contracts, not completed upstream models.
-    %% PO revision, approval and promise details remain to be designed; receiving constraints are below.
+    %% PO revision, approval and promise details are defined in the Purchase orders section below.
     %% UNIQUE PaymentAttemptAllocation(payment_attempt_id,goods_portion_id).
     %% UNIQUE PaymentAllocation(transaction_id,goods_portion_id).
     %% UNIQUE RefundAllocation(refund_id,return_line_id).
@@ -434,7 +434,6 @@ erDiagram
 
 %% Deliveries and inspections; replacement handling is excluded by the current scope decision.
     %% Actor FKs remain listed without adding more AppUser connectors.
-    PurchaseOrder ||..o{ Delivery : receives
     Delivery ||..|{ DeliveryRevision : preserves_versions
     DeliveryRevision o|..o| DeliveryRevision : superseded_by
     Delivery ||..|{ ReceiptPortion : contains
@@ -451,7 +450,7 @@ erDiagram
 
     Delivery {
         int delivery_id PK
-        int po_id FK
+        int po_issue_id FK
         string request_key UK
         int created_by_user_id FK
         datetime created_at
@@ -534,10 +533,168 @@ erDiagram
     %% GoodsReturnLine receipt_portion_id must share the GoodsPortion of its PaymentAllocation.
     %% Count a confirmed physical return once; do not also subtract it through a duplicate inspection reduction.
     %% Accepted retained quantity uses only effective decisions and confirmed physical returns.
-    %% GoodsPortion authorized quantities must fit the approved PO-line obligation, including across multiple portions.
+    %% Effective GoodsPortionAuthorization quantities must fit the acknowledged PO revision line, including across multiple portions.
     %% Payability also checks net paid allocations, confirmed refunds, and live payment reservations under transactional locks.
     %% EvidenceAttachment must have exactly one owner FK; uploads do not certify material quality.
     %% Expected arrivals come from effective PO commitments; supplier declarations do not prove physical receipt.
     %% Historical physical arrivals, accepted/rejected/pending quantities, and remaining obligations are separate views.
-    %% PurchaseOrder and POLine still require detailed revision/approval/promise design; no replacement entity or workflow is added.
+    %% PurchaseOrder and POLine are detailed below; no replacement entity or workflow is added.
+
+%% Purchase orders: revision-specific approval, issue, acknowledgement and immutable commitments.
+    %% Additional actor FKs are shown as attributes, preserving the three primary AppUser connectors.
+    RFQ ||..o| PurchaseOrder : produces
+    RFQItem ||..o{ POLine : originates
+    POLine o|..o{ POLine : split_from
+    PurchaseOrder ||..|{ PORevision : versions
+    PORevision o|..o{ PORevision : based_on
+    QuoteVersion ||..o{ PORevision : quoted_basis
+    PORevision ||..|{ PORevisionLine : contains
+    POLine ||..o{ PORevisionLine : appears_in
+    QuoteLine ||..o{ PORevisionLine : sourced_from
+    Unit ||..o{ PORevisionLine : measures
+    PORevision ||..o{ PORevisionCharge : charges
+    QuoteCharge o|..o{ PORevisionCharge : sourced_from
+    PORevision ||..o| POApproval : reviewed_by
+    PORevision ||..o| POIssue : issued_as
+    POIssue ||..o| POAcknowledgement : answered_by
+    PaymentProviderAccount ||..o{ ProviderOrderLimit : limit_versions
+    ProviderOrderLimit ||..o{ POIssue : checked_against
+    PORevisionLine ||..o{ GoodsPortionAuthorization : authorizes
+    GoodsPortion ||..o{ GoodsPortionAuthorization : scoped_by
+    PORevision ||..o{ ShipmentDeclaration : supplier_updates
+    ShipmentDeclaration o|..o{ ShipmentDeclaration : corrects
+    POIssue ||..o{ Delivery : received_under
+    POIssue ||..o{ ProviderPaymentAttempt : paid_under
+
+    PORevision {
+        int po_revision_id PK
+        int po_id FK
+        int revision_no
+        int based_on_revision_id FK "optional; same PO"
+        int quote_version_id FK
+        string buyer_name_snapshot
+        string supplier_name_snapshot
+        string delivery_address_text
+        string currency_code
+        string terms_text
+        string tax_basis_text
+        datetime promised_delivery_start
+        datetime promised_delivery_end
+        string change_reason "required after first revision"
+        int created_by_user_id FK
+        datetime created_at
+        datetime frozen_at "optional until submission"
+    }
+    PORevisionLine {
+        int po_revision_line_id PK
+        int po_revision_id FK
+        int po_line_id FK
+        int source_quote_line_id FK
+        string material_name
+        string specification_text
+        decimal quantity
+        int unit_id FK
+        decimal net_unit_price
+        decimal discount_amount
+    }
+    PORevisionCharge {
+        int po_revision_charge_id PK
+        int po_revision_id FK
+        int source_quote_charge_id FK "optional"
+        string charge_type
+        string charge_label
+        decimal amount "nullable while incomplete"
+    }
+    POApproval {
+        int po_approval_id PK
+        int po_revision_id FK, UK
+        int approver_user_id FK
+        int requested_by_user_id FK
+        datetime requested_at
+        string decision
+        datetime decided_at "optional while pending"
+        string reason_text
+    }
+    POIssue {
+        int po_issue_id PK
+        int po_revision_id FK, UK
+        int provider_limit_id FK
+        int issued_by_user_id FK
+        datetime issued_at
+    }
+    ProviderOrderLimit {
+        int provider_limit_id PK
+        int provider_account_id FK
+        string currency_code
+        decimal gross_order_limit
+        datetime valid_from
+        datetime valid_until "optional"
+        datetime confirmed_at
+        string evidence_reference
+        datetime revoked_at "optional"
+    }
+    POAcknowledgement {
+        int po_acknowledgement_id PK
+        int po_issue_id FK, UK
+        int responded_by_user_id FK
+        string decision
+        datetime responded_at
+        string reason_text
+    }
+    GoodsPortionAuthorization {
+        int portion_authorization_id PK
+        int goods_portion_id FK
+        int po_revision_line_id FK
+        decimal authorized_quantity
+    }
+    ShipmentDeclaration {
+        int declaration_id PK
+        int po_revision_id FK
+        int declared_by_user_id FK
+        string declaration_type
+        string statement_text
+        datetime occurred_at
+        datetime recorded_at
+        datetime estimated_arrival_start "optional; supplier estimate"
+        datetime estimated_arrival_end "optional; supplier estimate"
+        int corrects_declaration_id FK "optional; prior statement"
+        string request_key UK
+    }
+
+    %% PurchaseOrder and POLine now have defined roles; no reference-only marker remains on them.
+    %% UNIQUE POLine(po_id,line_no); source RFQ items may repeat only for a validated remaining-scope split.
+    %% UNIQUE PORevision(po_id,revision_no).
+    %% UNIQUE PORevisionLine(po_revision_id,po_line_id).
+    %% UNIQUE GoodsPortionAuthorization(goods_portion_id,po_revision_line_id).
+    %% Each PO keeps one supplier and jobsite; require RFQSelection before preparation and enforce one PO per RFQ.
+    %% Revision, line, quote version and quote line must agree on PO/RFQ, supplier, jobsite and source item.
+    %% Based-on revisions and origin lines must belong to the same PO; prohibit cycles.
+    %% Drafts may be incomplete; require at least one complete positive line before issue.
+    %% Freeze revision content and cost components before approval; never alter frozen contents.
+    %% Proposed MVP: one assigned approver and one final approval outcome per revision.
+    %% Approval decisions: PENDING/APPROVED/REJECTED; final decisions remain immutable.
+    %% Approval and issue require current scoped authority; organization-admin status grants neither automatically.
+    %% Issue only an approved exact revision with complete compatible terms and validated costs.
+    %% New purchase offers must be supplier-confirmed and current at issue; an old accepted PO is not erased by later quote expiry.
+    %% Net goods=sum(quantity*net_unit_price-discount_amount); discount cannot exceed that line value.
+    %% PO charge types: TAX/FREIGHT/OTHER. Normalize quoted included costs into verified components and count once.
+    %% Never assume a universal tax rate or turn unknown charges into zero; money is exact DECIMAL.
+    %% At issue, compare full gross total and currency with confirmed, effective, unrevoked provider limit evidence.
+    %% Keep ProviderOrderLimit evidence versions used by prior issues; do not overwrite historical caps.
+    %% Re-sending the same issue does not create another obligation or acknowledgement.
+    %% Supplier acknowledgement decisions: ACCEPTED/DECLINED; final responses remain immutable.
+    %% Supplier actor must represent this PO supplier; supplier membership details are completed with supplier-menu modeling.
+    %% One issued candidate may await a response per PO; serialize acceptance and effective-revision changes.
+    %% A successor becomes effective only after exact approval, issue and supplier acceptance; a declined successor leaves its predecessor intact.
+    %% Preserve the first acknowledged promise for history; a later promise never rewrites original lateness.
+    %% Acknowledged revision authorization quantities must cover its line quantities without duplicate economic ownership.
+    %% Never reduce authorization below protected receipts, net paid goods, confirmed returns or live reservations.
+    %% Do not reprice or rewrite specifications/units of portions with receiving/payment evidence; split only the unreceived remainder.
+    %% Material amendments repeat approval and acknowledgement; fuller amendment/cancellation UI remains outside P0.
+    %% Deliveries preserve their source issue. Current payability also checks the effective agreed obligation and prior allocations.
+    %% Payment attempts derive provider/account from the source issue limit; event/account/currency must match it.
+    %% Shipment declaration types: PREPARING/DISPATCHED/DELAYED; scope to an acknowledged PO revision, without requiring Delivery.
+    %% Supplier estimates do not amend contractual promises or establish physical arrival/inspection.
+    %% Declaration corrections preserve prior statements and must stay within the same PO.
+    %% Goods receipt, acceptance, payment, refund and payout remain separate facts; replacement handling remains excluded.
 ```
