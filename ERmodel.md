@@ -1,37 +1,30 @@
 # BuildSupply Hub ER Model
 
-RFQ, Organization settings, Purchase orders, Payments and returns, Deliveries and inspections, and Supplier history model from Page-2 of `BuildSupply Hub Sitemap.drawio`.
-
-This view shows the main relationships. Actor foreign keys remain listed even where their connectors are omitted.
-
-Purchase orders now include revision-specific approval, issue, supplier acknowledgement, and provider-limit evidence. `GoodsPortionAuthorization` records the authorized quantity of each stable goods portion for each PO revision.
-
-Supplier history adds `POOutcome` for final delivery/inspection outcomes and append-only `POOutcomeReview` for evidence eligibility. Private summaries and metrics are computed from source records; changed evidence requires review.
+This ER model covers the main data used by the Contractor menu: RFQs and quotes, purchase orders, deliveries and inspections, payments and returns, supplier history, and organization settings. The Supplier menu is still being developed.
 
 ```mermaid
 erDiagram
     direction LR
     %% Simplified view: actor FK fields remain; only primary AppUser relationships are drawn.
-    Organization ||..o{ Project : owns
-    Project ||..o{ Jobsite : contains
-    Jobsite ||..o{ RFQ : receives_requests
-    AppUser ||..o{ RFQ : creates
-    RFQ ||..o{ RFQItem : contains
-    Unit o|..o{ RFQItem : measures
-    RFQ ||..o{ RFQEvent : records
-    AppUser o|..o{ RFQEvent : performs
-    RFQ o|..o{ RFQ : replaces
-    RFQ ||..o{ Invitation : invites_through
-    Supplier ||..o{ Invitation : receives
-    Invitation ||..o{ InvitationToken : issues
-    Invitation ||..o| Quote : receives
-    Quote ||..o{ QuoteVersion : versions
-    QuoteVersion ||..o{ QuoteLine : prices
-    RFQItem ||..o{ QuoteLine : quoted_for
-    Unit ||..o{ QuoteLine : measures
-    QuoteVersion ||..o{ QuoteCharge : adds
-    RFQ ||..o| RFQSelection : selects
-    QuoteVersion ||..o| RFQSelection : chosen_version
+    Organization ||--o{ Project : owns
+    Project ||--o{ Jobsite : contains
+    Jobsite ||--o{ RFQ : receives_requests
+    AppUser ||--o{ RFQ : creates
+    RFQ ||--o{ RFQItem : contains
+    Unit o|--o{ RFQItem : measures
+    RFQ ||--o{ RFQEvent : records
+    AppUser o|--o{ RFQEvent : performs
+    RFQ o|--o{ RFQ : replaces
+    RFQ ||--o{ Invitation : invites_through
+    Supplier ||--o{ Invitation : receives
+    Invitation ||--o{ InvitationToken : issues
+    Invitation ||--o{ QuoteVersion : receives_versions
+    QuoteVersion ||--o{ QuoteLine : prices
+    RFQItem ||--o{ QuoteLine : quoted_for
+    Unit ||--o{ QuoteLine : measures
+    QuoteVersion ||--o{ QuoteCharge : adds
+    RFQ ||--o| RFQSelection : selects
+    QuoteVersion ||--o| RFQSelection : chosen_version
 
     Organization {
         int organization_id PK
@@ -95,6 +88,7 @@ erDiagram
         int sent_by_user_id FK
         datetime first_sent_at
         datetime declined_at "optional"
+        datetime quote_started_at "optional; first quote version created"
     }
     InvitationToken {
         int token_id PK
@@ -104,14 +98,9 @@ erDiagram
         datetime expires_at
         datetime revoked_at "optional"
     }
-    Quote {
-        int quote_id PK
-        int invitation_id FK, UK
-        datetime created_at
-    }
     QuoteVersion {
         int quote_version_id PK
-        int quote_id FK
+        int invitation_id FK
         int version_no
         int recorded_by_user_id FK
         int confirmed_by_user_id FK "optional until confirmed"
@@ -153,21 +142,25 @@ erDiagram
         datetime selected_at
     }
 
+    %% Quote family identity is the Invitation; zero versions means no quote has been started.
+    %% UNIQUE QuoteVersion(invitation_id,version_no).
+    %% quote_started_at is set with the first saved version and retains the former Quote.created_at meaning.
+    %% Preserve quote_started_at as a lifecycle timestamp; it is not recomputed from submitted_at.
+    %% Resends use the existing invitation and token lifecycle, not another quote family.
+
     %% Organization settings: membership, explicit roles and scoped access.
-    Organization ||..o{ Membership : has_members
-    AppUser ||..o{ Membership : joins
-    Organization ||..o{ MemberInvitation : invites
-    Membership ||..o{ MembershipEvent : records
-    Membership ||..o{ OrganizationRoleAssignment : receives
-    Role ||..o{ OrganizationRoleAssignment : assigned_as
-    Role ||--o{ RolePermission : grants
-    Permission ||--o{ RolePermission : included_in
-    Membership ||..o{ ProjectRoleAssignment : receives
-    Project ||..o{ ProjectRoleAssignment : scopes
-    Role ||..o{ ProjectRoleAssignment : assigned_as
-    Membership ||..o{ JobsiteRoleAssignment : receives
-    Jobsite ||..o{ JobsiteRoleAssignment : scopes
-    Role ||..o{ JobsiteRoleAssignment : assigned_as
+    Organization ||--o{ Membership : has_members
+    AppUser ||--o{ Membership : joins
+    Organization ||--o{ MemberInvitation : invites
+    Membership ||--o{ MembershipEvent : records
+    Membership ||--o{ OrganizationRoleAssignment : receives
+    Role ||--o{ OrganizationRoleAssignment : assigned_as
+    Membership ||--o{ ProjectRoleAssignment : receives
+    Project ||--o{ ProjectRoleAssignment : scopes
+    Role ||--o{ ProjectRoleAssignment : assigned_as
+    Membership ||--o{ JobsiteRoleAssignment : receives
+    Jobsite ||--o{ JobsiteRoleAssignment : scopes
+    Role ||--o{ JobsiteRoleAssignment : assigned_as
 
     Membership {
         int membership_id PK
@@ -201,14 +194,6 @@ erDiagram
         string role_code UK
         string role_scope
     }
-    Permission {
-        int permission_id PK
-        string permission_code UK
-    }
-    RolePermission {
-        int role_id PK, FK
-        int permission_id PK, FK
-    }
     OrganizationRoleAssignment {
         int org_role_assignment_id PK
         int membership_id FK
@@ -231,7 +216,6 @@ erDiagram
         int role_id FK
         int granted_by_user_id FK
         datetime granted_at
-        datetime valid_from
         datetime valid_until "optional"
         int revoked_by_user_id FK "optional"
         datetime revoked_at "optional"
@@ -243,7 +227,6 @@ erDiagram
         int role_id FK
         int granted_by_user_id FK
         datetime granted_at
-        datetime valid_from
         datetime valid_until "optional"
         int revoked_by_user_id FK "optional"
         datetime revoked_at "optional"
@@ -253,33 +236,35 @@ erDiagram
     %% Each scoped assignment must belong to its membership organization.
     %% Organization admin does not automatically authorize purchases or PO approval.
     %% Project grants cover child jobsites; jobsite grants cover only that site.
-    %% Evaluate active membership, effective unrevoked grants and permission on every action.
+    %% Roles use a fixed action matrix in application policy; no custom-role or permission-matrix editor.
+    %% Evaluate active membership, fixed role actions, scope and unexpired unrevoked grants on every action.
+    %% Project/jobsite grants start at granted_at; valid_until retains access expiry required by TC19.
     %% Preserve grant history; prevent overlapping duplicate member/role/scope grants.
     %% Protect the last active organization admin; rejoining does not restore revoked grants.
     %% Prepared Project/Jobsite data support MVP US01; self-service creation remains outside P0.
 
     %% Payments and returns: proposed full detail for US17-US18, with shared fee support.
     %% Actor FKs are retained as attributes; their extra AppUser lines are intentionally omitted.
-    Jobsite ||..o{ PurchaseOrder : scopes
-    Supplier ||..o{ PurchaseOrder : supplies
-    PurchaseOrder ||..o{ POLine : contains
-    POLine ||..o{ GoodsPortion : apportioned_as
-    ProviderPaymentAttempt ||..o{ PaymentAttemptAllocation : intends
-    GoodsPortion ||..o{ PaymentAttemptAllocation : requested_for
-    ProviderPaymentAttempt ||..o{ ProviderTransaction : confirmed_transactions
-    ProviderTransaction ||..o{ PaymentAllocation : allocates
-    GoodsPortion ||..o{ PaymentAllocation : paid_for
-    PurchaseOrder ||..o{ GoodsReturn : returned_under
-    GoodsReturn ||..o{ GoodsReturnLine : contains
-    PaymentAllocation ||..o{ GoodsReturnLine : returned_from
-    ProviderTransaction ||..o{ Refund : refunded_by
-    Refund ||..o{ RefundAllocation : allocates
-    GoodsReturnLine ||..o{ RefundAllocation : refunded_for
-    PaymentProviderAccount ||..o{ ProviderEvent : emits
-    ProviderEvent ||..o{ ProviderTransaction : confirms
-    ProviderEvent o|..o{ Refund : confirms_when_successful
-    PaymentAllocation o|..o| CommissionEntry : charge_entry
-    RefundAllocation o|..o| CommissionEntry : reversal_entry
+    Jobsite ||--o{ PurchaseOrder : scopes
+    Supplier ||--o{ PurchaseOrder : supplies
+    PurchaseOrder ||--o{ POLine : contains
+    POLine ||--o{ GoodsPortion : apportioned_as
+    ProviderPaymentAttempt ||--o{ PaymentAttemptAllocation : intends
+    GoodsPortion ||--o{ PaymentAttemptAllocation : requested_for
+    ProviderPaymentAttempt ||--o{ ProviderTransaction : confirmed_transactions
+    ProviderTransaction ||--o{ PaymentAllocation : allocates
+    GoodsPortion ||--o{ PaymentAllocation : paid_for
+    PurchaseOrder ||--o{ GoodsReturn : returned_under
+    GoodsReturn ||--o{ GoodsReturnLine : contains
+    PaymentAllocation ||--o{ GoodsReturnLine : returned_from
+    ProviderTransaction ||--o{ Refund : refunded_by
+    Refund ||--o{ RefundAllocation : allocates
+    GoodsReturnLine ||--o{ RefundAllocation : refunded_for
+    PaymentProviderAccount ||--o{ ProviderEvent : emits
+    ProviderEvent ||--o{ ProviderTransaction : confirms
+    ProviderEvent o|--o{ Refund : confirms_when_successful
+    PaymentAllocation o|--o| CommissionEntry : charge_entry
+    RefundAllocation o|--o| CommissionEntry : reversal_entry
 
     PurchaseOrder {
         int po_id PK
@@ -436,19 +421,19 @@ erDiagram
 
 %% Deliveries and inspections; replacement handling is excluded by the current scope decision.
     %% Actor FKs remain listed without adding more AppUser connectors.
-    Delivery ||..|{ DeliveryRevision : preserves_versions
-    DeliveryRevision o|..o| DeliveryRevision : superseded_by
-    Delivery ||..|{ ReceiptPortion : contains
-    GoodsPortion ||..o{ ReceiptPortion : received_as
-    ReceiptPortion ||..|{ ReceiptPortionRevision : preserves_quantities
-    ReceiptPortionRevision o|..o| ReceiptPortionRevision : superseded_by
-    Delivery ||..o{ Inspection : inspected_in
-    Inspection ||..|{ AcceptanceDecision : records
-    ReceiptPortionRevision ||..o{ AcceptanceDecision : evaluated_by
-    AcceptanceDecision o|..o| AcceptanceDecision : superseded_by
-    DeliveryRevision o|..o{ EvidenceAttachment : arrival_evidence
-    Inspection o|..o{ EvidenceAttachment : inspection_evidence
-    ReceiptPortion ||..o{ GoodsReturnLine : physically_returned_from
+    Delivery ||--|{ DeliveryRevision : preserves_versions
+    DeliveryRevision o|--o| DeliveryRevision : superseded_by
+    Delivery ||--|{ ReceiptPortion : contains
+    GoodsPortion ||--o{ ReceiptPortion : received_as
+    ReceiptPortion ||--|{ ReceiptPortionRevision : preserves_quantities
+    ReceiptPortionRevision o|--o| ReceiptPortionRevision : superseded_by
+    Delivery ||--o{ Inspection : inspected_in
+    Inspection ||--|{ AcceptanceDecision : records
+    ReceiptPortionRevision ||--o{ AcceptanceDecision : evaluated_by
+    AcceptanceDecision o|--o| AcceptanceDecision : superseded_by
+    DeliveryRevision o|--o{ EvidenceAttachment : arrival_evidence
+    Inspection o|--o{ EvidenceAttachment : inspection_evidence
+    ReceiptPortion ||--o{ GoodsReturnLine : physically_returned_from
 
     Delivery {
         int delivery_id PK
@@ -544,29 +529,28 @@ erDiagram
 
 %% Purchase orders: revision-specific approval, issue, acknowledgement and immutable commitments.
     %% Additional actor FKs are shown as attributes, preserving the three primary AppUser connectors.
-    RFQ ||..o| PurchaseOrder : produces
-    RFQItem ||..o{ POLine : originates
-    POLine o|..o{ POLine : split_from
-    PurchaseOrder ||..|{ PORevision : versions
-    PORevision o|..o{ PORevision : based_on
-    QuoteVersion ||..o{ PORevision : quoted_basis
-    PORevision ||..|{ PORevisionLine : contains
-    POLine ||..o{ PORevisionLine : appears_in
-    QuoteLine ||..o{ PORevisionLine : sourced_from
-    Unit ||..o{ PORevisionLine : measures
-    PORevision ||..o{ PORevisionCharge : charges
-    QuoteCharge o|..o{ PORevisionCharge : sourced_from
-    PORevision ||..o| POApproval : reviewed_by
-    PORevision ||..o| POIssue : issued_as
-    POIssue ||..o| POAcknowledgement : answered_by
-    PaymentProviderAccount ||..o{ ProviderOrderLimit : limit_versions
-    ProviderOrderLimit ||..o{ POIssue : checked_against
-    PORevisionLine ||..o{ GoodsPortionAuthorization : authorizes
-    GoodsPortion ||..o{ GoodsPortionAuthorization : scoped_by
-    PORevision ||..o{ ShipmentDeclaration : supplier_updates
-    ShipmentDeclaration o|..o{ ShipmentDeclaration : corrects
-    POIssue ||..o{ Delivery : received_under
-    POIssue ||..o{ ProviderPaymentAttempt : paid_under
+    RFQ ||--o| PurchaseOrder : produces
+    RFQItem ||--o{ POLine : originates
+    POLine o|--o{ POLine : split_from
+    PurchaseOrder ||--|{ PORevision : versions
+    PORevision o|--o{ PORevision : based_on
+    QuoteVersion ||--o{ PORevision : quoted_basis
+    PORevision ||--|{ PORevisionLine : contains
+    POLine ||--o{ PORevisionLine : appears_in
+    QuoteLine ||--o{ PORevisionLine : sourced_from
+    Unit ||--o{ PORevisionLine : measures
+    PORevision ||--o{ PORevisionCharge : charges
+    QuoteCharge o|--o{ PORevisionCharge : sourced_from
+    PORevision ||--o| POApproval : reviewed_by
+    PORevision ||--o| POIssue : issued_as
+    PaymentProviderAccount ||--o{ ProviderOrderLimit : limit_versions
+    ProviderOrderLimit ||--o{ POIssue : checked_against
+    PORevisionLine ||--o{ GoodsPortionAuthorization : authorizes
+    GoodsPortion ||--o{ GoodsPortionAuthorization : scoped_by
+    PORevision ||--o{ ShipmentDeclaration : supplier_updates
+    ShipmentDeclaration o|--o{ ShipmentDeclaration : corrects
+    POIssue ||--o{ Delivery : received_under
+    POIssue ||--o{ ProviderPaymentAttempt : paid_under
 
     PORevision {
         int po_revision_id PK
@@ -623,6 +607,10 @@ erDiagram
         int provider_limit_id FK
         int issued_by_user_id FK
         datetime issued_at
+        int responded_by_user_id FK "optional until supplier response"
+        string response_decision "optional; ACCEPTED or DECLINED"
+        datetime responded_at "optional until supplier response"
+        string response_reason "optional; supplier response reason"
     }
     ProviderOrderLimit {
         int provider_limit_id PK
@@ -634,14 +622,6 @@ erDiagram
         datetime confirmed_at
         string evidence_reference
         datetime revoked_at "optional"
-    }
-    POAcknowledgement {
-        int po_acknowledgement_id PK
-        int po_issue_id FK, UK
-        int responded_by_user_id FK
-        string decision
-        datetime responded_at
-        string reason_text
     }
     GoodsPortionAuthorization {
         int portion_authorization_id PK
@@ -684,7 +664,10 @@ erDiagram
     %% At issue, compare full gross total and currency with confirmed, effective, unrevoked provider limit evidence.
     %% Keep ProviderOrderLimit evidence versions used by prior issues; do not overwrite historical caps.
     %% Re-sending the same issue does not create another obligation or acknowledgement.
-    %% Supplier acknowledgement decisions: ACCEPTED/DECLINED; final responses remain immutable.
+    %% POIssue response fields record a separate supplier fact: issued does not mean accepted.
+    %% Before response all response fields are NULL; afterwards decision, actor and time are required, reason is optional.
+    %% Response decisions: ACCEPTED/DECLINED; one final response per issue, immutable once recorded.
+    %% Supplier responses may be recorded only after issue; retries cannot change the final response.
     %% Supplier actor must represent this PO supplier; supplier membership details are completed with supplier-menu modeling.
     %% One issued candidate may await a response per PO; serialize acceptance and effective-revision changes.
     %% A successor becomes effective only after exact approval, issue and supplier acceptance; a declined successor leaves its predecessor intact.
@@ -711,29 +694,16 @@ erDiagram
         string reason_text
         string request_key UK
     }
-    POOutcomeReview {
-        int outcome_review_id PK
-        int po_id FK
-        string review_status
-        int reviewed_by_user_id FK
-        datetime reviewed_at
-        string reason_text
-        string evidence_reference "optional"
-        string source_fingerprint
-        int supersedes_review_id FK, UK "optional; previous review"
-        string request_key UK
-    }
-    PurchaseOrder ||..o| POOutcome : finalized_by
-    PurchaseOrder ||..o{ POOutcomeReview : reviewed_in
-    POOutcomeReview o|..o| POOutcomeReview : superseded_by
+    PurchaseOrder ||--o| POOutcome : finalized_by
 
     %% POOutcome confirms a final delivery/inspection outcome, not settlement, waiver or authority to cancel.
     %% closure_kind: COMPLETED/CLOSED_SHORT/CANCELLED. Cancellation requires actual agreement evidence.
     %% One main final outcome per PO. Never overwrite agreed quantities, erase payments or infer supplier payout from closure.
-    %% review_status: CONFIRMED/DISPUTED/INCOMPLETE. Append-only reviews preserve prior reasons and source evidence.
-    %% Review predecessor must be in the same PO; allow one root and one unbranched current chain, with no cycles.
-    %% The current review fingerprint covers the relevant source values/versions. Changed evidence displays Needs review until reconfirmed.
-    %% Review facts support evidence quality; a complete dispute workflow and full US23 restatement workflow remain outside MVP.
+    %% No separate reviewer, confirmation status or source fingerprint is required to enter history.
+    %% Derive evidence completeness and eligibility from authoritative source facts; expose exclusion reasons.
+    %% Source corrections retain their original versions/reasons and trigger recomputation, not manual reconfirmation.
+    %% Full US16 dispute evidence and US23 historical restatement/audit remain unfinished full-scope requirements.
+    %% Do not infer no dispute from the absence of a dispute model; unavailable evidence remains explicitly unknown.
     %% SupplierHistorySummary and SupplierOrderOutcome are computed views, not persistent summary entities.
     %% Derive supplier from PO and organization through PO->Jobsite->Project->Organization. Apply scoped permissions before aggregation.
     %% History sources: supplier-acknowledged PORevision/lines and GoodsPortionAuthorization, DeliveryRevision arrival,
@@ -741,8 +711,10 @@ erDiagram
     %% Preserve the first supplier-accepted promise as original baseline; display later accepted promises separately.
     %% D17 history window: previous 12 months. Proposed cohort anchor is POOutcome.closed_at relative to report as-of date.
     %% Show actual date bounds and recency. One PO counts once; overlapping exclusion-reason counts are not an additive denominator.
-    %% Eligible: supplier acknowledged, known original deadline, final outcome, current CONFIRMED review matching source fingerprint,
-    %% comparable line quantities/units and complete inspection evidence. CLOSED_SHORT with complete evidence remains a failure.
+    %% Eligibility uses supplier acknowledgement, known original deadline, final outcome,
+    %% comparable line quantities/units and complete inspection evidence, plus explicit dispute/exclusion facts when modeled.
+    %% Incomplete dispute coverage must be shown as a limitation, not silently treated as a clean result.
+    %% CLOSED_SHORT with complete evidence remains a failure; no manual history-approval gate is required.
     %% Display open/overdue, cancelled/partly cancelled, disputed, incomplete and noncomparable orders separately from eligible metrics.
     %% Proposed on-time rule: inspection-accepted goods physically arrived in full for every original line by its original deadline.
     %% Use actual arrival times of accepted quantities, not inspection completion times; compare each line/unit without mixing units.
