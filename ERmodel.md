@@ -1,6 +1,6 @@
 # BuildSupply Hub ER Model
 
-This ER model covers the main data used by the Contractor menu: RFQs and quotes, purchase orders, deliveries and inspections, payments and returns, supplier history, and organization settings. The Supplier menu is still being developed.
+This ER model covers the main data used by the Contractor menu: RFQs and quotes, purchase orders, deliveries and inspections, payments and returns, supplier history, and organization settings. The Supplier menu is being developed. RFQ invitations and Invited RFQ detail use `SupplierMembership` for supplier representation; Quote editor uses draft and submitted `QuoteVersion` records with `created_at`, immutable submitted contents, and explicit supplier confirmation.
 
 ```mermaid
 erDiagram
@@ -102,29 +102,30 @@ erDiagram
         int quote_version_id PK
         int invitation_id FK
         int version_no
+        datetime created_at
         int recorded_by_user_id FK
         int confirmed_by_user_id FK "optional until confirmed"
         string source_kind
         string source_ref "FULL: external quote evidence"
-        string currency_code
-        string terms_text
-        string tax_basis_text
-        datetime valid_until
-        datetime promised_delivery_start
-        datetime promised_delivery_end
-        datetime submitted_at
-        datetime confirmed_at
+        string currency_code "nullable in draft"
+        string terms_text "nullable in draft"
+        string tax_basis_text "unknown or draft; flag if missing"
+        datetime valid_until "unknown or draft; flag if missing"
+        datetime promised_delivery_start "nullable in draft"
+        datetime promised_delivery_end "nullable in draft"
+        datetime submitted_at "nullable in draft"
+        datetime confirmed_at "optional until supplier confirmation"
         datetime withdrawn_at "optional"
     }
     QuoteLine {
         int quote_line_id PK
         int quote_version_id FK
         int rfq_item_id FK
-        string offered_specification
-        decimal quoted_quantity
-        int unit_id FK
-        decimal unit_price
-        decimal discount_amount
+        string offered_specification "nullable in draft"
+        decimal quoted_quantity "nullable in draft"
+        int unit_id FK "nullable in draft"
+        decimal unit_price "nullable in draft"
+        decimal discount_amount "nullable in draft"
     }
     QuoteCharge {
         int charge_id PK
@@ -528,7 +529,7 @@ erDiagram
     %% PurchaseOrder and POLine are detailed below; no replacement entity or workflow is added.
 
 %% Purchase orders: revision-specific approval, issue, acknowledgement and immutable commitments.
-    %% Additional actor FKs are shown as attributes, preserving the three primary AppUser connectors.
+    %% Additional actor FKs are shown as attributes, preserving only primary AppUser relationships.
     RFQ ||--o| PurchaseOrder : produces
     RFQItem ||--o{ POLine : originates
     POLine o|--o{ POLine : split_from
@@ -668,7 +669,7 @@ erDiagram
     %% Before response all response fields are NULL; afterwards decision, actor and time are required, reason is optional.
     %% Response decisions: ACCEPTED/DECLINED; one final response per issue, immutable once recorded.
     %% Supplier responses may be recorded only after issue; retries cannot change the final response.
-    %% Supplier actor must represent this PO supplier; supplier membership details are completed with supplier-menu modeling.
+    %% Supplier actor must have active SupplierMembership for this PO supplier; action authority follows fixed supplier policy.
     %% One issued candidate may await a response per PO; serialize acceptance and effective-revision changes.
     %% A successor becomes effective only after exact approval, issue and supplier acceptance; a declined successor leaves its predecessor intact.
     %% Preserve the first acknowledged promise for history; a later promise never rewrites original lateness.
@@ -724,4 +725,55 @@ erDiagram
     %% Zero eligible orders: N/A. One to four: counts and Insufficient history, no percentage. Five or more: descriptive percentage.
     %% Always show numerator, denominator, recency and authorized PO drilldown. Never store manually edited history scores.
     %% US22 P0 private supplier history supports US08; MVP does not include full US23 historical restatement tooling.
+
+    %% RFQ invitations: supplier representation and invitation-scoped access.
+    Supplier ||--o{ SupplierMembership : has_representatives
+    AppUser ||--o{ SupplierMembership : represents_through
+    SupplierMembership {
+        int supplier_membership_id PK
+        int supplier_id FK
+        int user_id FK
+        datetime joined_at
+        datetime revoked_at "optional"
+    }
+
+    %% Proposed MVP: one fixed Supplier representative action policy; no additional sales/finance roles or permission tables.
+    %% SupplierMembership records one membership period. Active means joined_at<=now and revoked_at IS NULL.
+    %% revoked_at must not precede joined_at. Prevent overlapping periods and duplicate active (supplier_id,user_id) pairs.
+    %% Rejoining creates a new membership period; preserve old revocation dates and prior business actor references.
+    %% Only an authorized supplier-access manager may establish or revoke representation; users cannot claim arbitrary supplier IDs.
+    %% Membership establishes representation, not access to every RFQ or to contractor organization-private data.
+    %% Supplier RFQ reads/actions require active membership matching Invitation.supplier_id and the owning Invitation/RFQ.
+    %% Existing InvitationToken expiry/revocation governs invitation-link access; validate the exact presented token, never a different live token.
+    %% Proposed menu access: a supplier-owned invitation is active while it has an unexpired unrevoked issued token.
+    %% Whole-invitation revocation invalidates all live tokens; resends retain Invitation identity and preserve token history.
+    %% Expired/revoked entries may expose only minimal authorized list metadata, never the RFQ basket or protected attachments/exports.
+    %% Check membership and invitation scope on every read, action, direct link, attachment and export, including after revocation.
+    %% Invited RFQ detail exposes only the invited need and this supplier's QuoteVersions; never competitor quotes or buyer-private history.
+    %% Decline uses Invitation.declined_at; quote_started_at and own QuoteVersions support derived response/list progress.
+    %% RFQ invitations and Invited RFQ detail are views over existing records, not new entity tables.
+    %% Preserve quotes, POs and recorded actors after membership revocation; revocation removes access without deleting business history.
+
+    %% Quote editor: US06 supplier drafts, immutable submitted versions and explicit confirmation.
+    %% QuoteVersion.created_at records this version's first save; Invitation.quote_started_at remains the first family start.
+    %% Draft means submitted_at IS NULL. Drafts may have zero lines or incomplete business fields and are private to their authorized supplier.
+    %% An authorized buyer recording an external quote may access its own indicative record under existing buyer scope.
+    %% Saving a draft updates that draft and its lines/charges; submitted contents, prices, terms and promises are immutable.
+    %% A correction after submission creates the next version under the same Invitation, copying lines/charges with new row IDs.
+    %% Allocate version_no atomically under UNIQUE(invitation_id,version_no); repeated save/submit of the same draft must not create another submission.
+    %% QuoteLine.rfq_item_id must belong to the Invitation's RFQ; keep offered specifications separate from the buyer's requested RFQItem.
+    %% Present the whole invited basket; missing or noncomparable items, quantities, units and specifications remain explicit exceptions.
+    %% Supplier submission records submitted_at, confirmed_by_user_id and confirmed_at together for the exact submitted version.
+    %% Recheck active SupplierMembership and invitation authority before each edit, submit or confirmation.
+    %% Buyer-entered external quotes retain source_kind, source_ref and recorder; remain indicative until that supplier confirms the exact contents.
+    %% Supplier confirmation does not repair missing fields or make an expired or mismatched offer suitable.
+    %% Unknown price, discount, freight, tax basis or expiry remains NULL/explicitly unknown; never coerce unknown values to zero or free delivery.
+    %% Explicit zero means a known zero charge or discount. Validate nonnegative monetary values, positive offered quantities and valid time windows.
+    %% Enforce completeness for suitable comparison, selection and PO issue; incomplete visible submissions carry named exceptions.
+    %% Quoted delivered cost derives from line quantities/prices/discounts and charge treatment; do not store an editable total or double-count included charges.
+    %% Tax basis and quoted tax must be explicit; never assume one universal tax rate. Use exact DECIMAL monetary values.
+    %% Draft, submitted, confirmed, expired and withdrawn labels derive from timestamps and current time; no redundant quote-status column is added.
+    %% A newer submitted quote does not silently replace RFQSelection, PORevision snapshots or an already acknowledged obligation.
+    %% Expiry/withdrawal affects future offer eligibility without rewriting an existing PO's preserved terms.
+    %% After submission return to the owning Invited RFQ detail, showing only this supplier's authorized version history.
 ```
