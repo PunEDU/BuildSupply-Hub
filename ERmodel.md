@@ -1,10 +1,10 @@
 # BuildSupply Hub ER Model
 
-RFQ, Organization settings, and Payments and returns model from Page-2 of `BuildSupply Hub Sitemap.drawio`.
+RFQ, Organization settings, Payments and returns, and Deliveries and inspections model from Page-2 of `BuildSupply Hub Sitemap.drawio`.
 
 This view shows the main relationships. Actor foreign keys remain listed even where their connectors are omitted.
 
-`PurchaseOrder`, `POLine`, and `GoodsPortion` are reference entities; their detailed upstream models are still pending.
+`PurchaseOrder` and `POLine` are reference entities; their detailed upstream models are still pending. `GoodsPortion` now defines a stable part of the approved purchase obligation.
 
 ```mermaid
 erDiagram
@@ -293,8 +293,9 @@ erDiagram
         int po_id FK
     }
     GoodsPortion {
-        int goods_portion_id PK "REFERENCE ONLY"
+        int goods_portion_id PK
         int po_line_id FK
+        decimal authorized_quantity
     }
     ProviderPaymentAttempt {
         int payment_attempt_id PK
@@ -350,6 +351,7 @@ erDiagram
         int return_line_id PK
         int return_id FK
         int payment_allocation_id FK
+        int receipt_portion_id FK
         decimal quantity
         string reason_text
         string return_status
@@ -406,8 +408,8 @@ erDiagram
         datetime created_at
     }
 
-    %% REFERENCE ONLY: PurchaseOrder/POLine/GoodsPortion are integration contracts, not completed upstream models.
-    %% PO revisions, approval, receipt/inspection evidence and accepted portion limits remain to be designed there.
+    %% REFERENCE ONLY: PurchaseOrder/POLine are integration contracts, not completed upstream models.
+    %% PO revision, approval and promise details remain to be designed; receiving constraints are below.
     %% UNIQUE PaymentAttemptAllocation(payment_attempt_id,goods_portion_id).
     %% UNIQUE PaymentAllocation(transaction_id,goods_portion_id).
     %% UNIQUE RefundAllocation(refund_id,return_line_id).
@@ -429,4 +431,113 @@ erDiagram
     %% Final full refund reverses the remaining original fee including rounding residue.
     %% Store money as exact DECIMAL; no card credentials; actor permissions use existing scoped assignments.
     %% This extension does not complete supplier payout/processing-charge models or full-product coverage.
+
+%% Deliveries and inspections; replacement handling is excluded by the current scope decision.
+    %% Actor FKs remain listed without adding more AppUser connectors.
+    PurchaseOrder ||..o{ Delivery : receives
+    Delivery ||..|{ DeliveryRevision : preserves_versions
+    DeliveryRevision o|..o| DeliveryRevision : superseded_by
+    Delivery ||..|{ ReceiptPortion : contains
+    GoodsPortion ||..o{ ReceiptPortion : received_as
+    ReceiptPortion ||..|{ ReceiptPortionRevision : preserves_quantities
+    ReceiptPortionRevision o|..o| ReceiptPortionRevision : superseded_by
+    Delivery ||..o{ Inspection : inspected_in
+    Inspection ||..|{ AcceptanceDecision : records
+    ReceiptPortionRevision ||..o{ AcceptanceDecision : evaluated_by
+    AcceptanceDecision o|..o| AcceptanceDecision : superseded_by
+    DeliveryRevision o|..o{ EvidenceAttachment : arrival_evidence
+    Inspection o|..o{ EvidenceAttachment : inspection_evidence
+    ReceiptPortion ||..o{ GoodsReturnLine : physically_returned_from
+
+    Delivery {
+        int delivery_id PK
+        int po_id FK
+        string request_key UK
+        int created_by_user_id FK
+        datetime created_at
+    }
+    DeliveryRevision {
+        int delivery_revision_id PK
+        int delivery_id FK
+        int version_no
+        datetime actual_arrived_at
+        string delivery_note_ref "optional"
+        int recorded_by_user_id FK
+        datetime recorded_at
+        int supersedes_revision_id FK, UK "optional; prior arrival version"
+        string correction_reason "required after first version"
+    }
+    ReceiptPortion {
+        int receipt_portion_id PK
+        int delivery_id FK
+        int goods_portion_id FK
+        int line_no
+    }
+    ReceiptPortionRevision {
+        int receipt_revision_id PK
+        int receipt_portion_id FK
+        int version_no
+        decimal received_quantity
+        int recorded_by_user_id FK
+        datetime recorded_at
+        int supersedes_revision_id FK, UK "optional; prior quantity version"
+        string correction_reason "required after first version"
+    }
+    Inspection {
+        int inspection_id PK
+        int delivery_id FK
+        int inspected_by_user_id FK
+        datetime inspected_at
+        datetime recorded_at
+        string request_key UK
+        string notes "optional"
+    }
+    AcceptanceDecision {
+        int decision_id PK
+        int inspection_id FK
+        int receipt_revision_id FK
+        decimal accepted_quantity
+        decimal rejected_quantity
+        string reason_text "required for rejection or correction"
+        int supersedes_decision_id FK, UK "optional; prior full decision"
+    }
+    EvidenceAttachment {
+        int attachment_id PK
+        int delivery_revision_id FK "optional; arrival owner"
+        int inspection_id FK "optional; inspection owner"
+        string storage_key UK
+        string original_filename
+        string mime_type
+        string sha256
+        int uploaded_by_user_id FK
+        datetime uploaded_at
+    }
+
+    %% GoodsPortion is a stable economic part of a PO line; it is no longer a reference-only entity.
+    %% UNIQUE DeliveryRevision(delivery_id,version_no).
+    %% UNIQUE ReceiptPortion(delivery_id,line_no).
+    %% UNIQUE ReceiptPortionRevision(receipt_portion_id,version_no).
+    %% UNIQUE AcceptanceDecision(inspection_id,receipt_revision_id).
+    %% Nullable predecessor keys are unique when present; prevent cycles and branching.
+    %% Delivery and quantity predecessors must have the same stable owner.
+    %% A decision predecessor must concern the same stable ReceiptPortion, including across corrected versions.
+    %% Each saved arrival has a first arrival version and at least one receipt line/version, created atomically.
+    %% Each saved inspection has at least one complete decision; all lines must belong to its Delivery.
+    %% Receipt and decision quantities are nonnegative; accepted+rejected cannot exceed the referenced received quantity.
+    %% Decisions are full snapshots, not additive deltas; pending=received-accepted-rejected.
+    %% No inspection means all received quantity is pending, never implicitly accepted.
+    %% Resolve current arrival/quantity/decision versions through the validated unbranched history.
+    %% Publishing a quantity correction and corresponding current decision must be atomic.
+    %% Preserve established classifications when still valid; otherwise explicitly record changed classifications and reason.
+    %% Never reduce support below paid/returned/reserved amounts by silently replacing a version.
+    %% After payment, material physical changes use linked return/refund records, not rewritten original facts.
+    %% GoodsReturnLine receipt_portion_id must share the GoodsPortion of its PaymentAllocation.
+    %% Count a confirmed physical return once; do not also subtract it through a duplicate inspection reduction.
+    %% Accepted retained quantity uses only effective decisions and confirmed physical returns.
+    %% GoodsPortion authorized quantities must fit the approved PO-line obligation, including across multiple portions.
+    %% Payability also checks net paid allocations, confirmed refunds, and live payment reservations under transactional locks.
+    %% EvidenceAttachment must have exactly one owner FK; uploads do not certify material quality.
+    %% Expected arrivals come from effective PO commitments; supplier declarations do not prove physical receipt.
+    %% Historical physical arrivals, accepted/rejected/pending quantities, and remaining obligations are separate views.
+    %% PurchaseOrder and POLine still require detailed revision/approval/promise design; no replacement entity or workflow is added.
 ```
