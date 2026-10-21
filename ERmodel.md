@@ -1,8 +1,8 @@
 # BuildSupply Hub ER Model
 
-This ER model covers the main data used by the Contractor menu: RFQs and quotes, purchase orders, deliveries and inspections, payments and returns, supplier history, and organization settings. The Supplier menu is being developed. RFQ invitations and Invited RFQ detail use `SupplierMembership` for supplier representation; Quote editor uses draft and submitted `QuoteVersion` records with `created_at`, immutable submitted contents, and explicit supplier confirmation.
+This ER model covers the main Contractor and Supplier workflows: RFQs and quotations, purchase orders, deliveries and inspections, payments and returns, supplier payouts and fees, private supplier history, organization and supplier access, and public catalog listings.
 
-Supplier Purchase orders uses issued revision snapshots, supplier responses in `POIssue`, and dated `ShipmentDeclaration` records. Payments and payouts adds provider recipient accounts, processing charges/credits, payout movements and net-cash allocations; buyer payment, Hub fees and actual supplier transfers remain separate evidence.
+Public listings and supplier publication verification are outside the P0 MVP. Operator workflows and remaining full-scope requirements are still under development.
 
 ```mermaid
 erDiagram
@@ -70,6 +70,7 @@ erDiagram
         string specification_text
         decimal requested_quantity "nullable in draft"
         int unit_id FK "nullable in draft"
+        int source_listing_id FK "optional; FULL catalog source"
     }
     RFQEvent {
         int event_id PK
@@ -887,4 +888,80 @@ erDiagram
     %% Hub fee rate and provider charge/refund/settlement conventions remain unset until provider contract confirmation; no universal rate is assumed.
     %% SupplierMembership and source ownership scope every read/aggregation/drilldown; hide other suppliers' transactions and recipient data.
     %% Payments and payouts is a computed evidence view, not a new summary table. Full US21 statement/export and full split-instruction workflows remain separate work.
+
+    %% FULL scope, outside P0: Public listings, Listing editor and supplier publication eligibility.
+    MaterialCategory ||--o{ MaterialSpecification : classifies
+    MaterialSpecification ||--o{ SupplierListing : offered_as
+    Supplier ||--o{ SupplierListing : publishes
+    Unit ||--o{ SupplierListing : priced_and_reported_in
+    Supplier ||--o{ SupplierVerification : reviewed_in
+    SupplierListing o|--o{ RFQItem : catalog_source_for
+
+    MaterialCategory {
+        int category_id PK
+        string category_name UK
+    }
+    MaterialSpecification {
+        int material_specification_id PK
+        int category_id FK
+        string specification_name
+        string specification_text
+    }
+    SupplierListing {
+        int listing_id PK
+        int supplier_id FK
+        int material_specification_id FK
+        string listing_title
+        string description_text
+        int unit_id FK
+        decimal indicative_unit_price "optional; unknown is not zero"
+        string currency_code
+        string price_basis_text
+        datetime price_updated_at "optional until price information reported"
+        decimal reported_stock_quantity "optional; supplier reported"
+        datetime stock_updated_at "optional until stock reported"
+        string publication_status "DRAFT/PUBLISHED/ARCHIVED"
+        int created_by_user_id FK
+        datetime created_at
+        int updated_by_user_id FK
+        datetime updated_at
+    }
+    SupplierVerification {
+        int supplier_verification_id PK
+        int supplier_id FK
+        int decision_no
+        string decision "APPROVED/REJECTED/REVOKED"
+        int decided_by_user_id FK
+        datetime decided_at
+        string reason_text
+        string evidence_reference "optional"
+    }
+
+    %% These four entities and RFQItem.source_listing_id are full-scope catalog expansion, not part of the 15-story P0 release.
+    %% Category/specification records are shared catalog data; supplier representatives select them and edit only their own listing descriptions/offers.
+    %% Changing one supplier listing never edits another supplier's listing or the shared specification; catalog edits require catalog-management authority.
+    %% SupplierListing has one owning Supplier, shared specification and price/stock Unit; actors require active matching SupplierMembership on each write.
+    %% Listing publication_status records supplier intent: DRAFT/PUBLISHED/ARCHIVED. Pending verification is a derived eligibility label, not another stored status.
+    %% Public visibility requires publication_status=PUBLISHED and this supplier's latest SupplierVerification decision=APPROVED.
+    %% Saving an unverified supplier's draft is allowed; requesting publication requires current operator approval and complete public identity/specification/unit/currency fields.
+    %% Supplier approval does not automatically publish drafts; REJECTED/REVOKED removes public visibility even if stored publication intent remains PUBLISHED.
+    %% Preserve archived/hidden listings referenced by RFQs; do not cascade-delete procurement history.
+    %% UNIQUE SupplierVerification(supplier_id,decision_no). Append immutable decisions and serialize their sequence per supplier.
+    %% Before any decision the supplier is not approved; latest APPROVED/REJECTED/REVOKED determines current publication eligibility.
+    %% Only an authorized platform operator records verification decisions; suppliers cannot approve themselves or edit operator evidence.
+    %% Record decision actor/time and reason; require a reason for rejection/revocation. Operator onboarding invitation/authority workflows are completed with Operator menu modeling.
+    %% SupplierVerification is publication eligibility, separate from SupplierProviderAccount onboarding/payment-recipient verification.
+    %% Public prices are indicative and price_basis_text explains known tax/freight conditions; unknown inclusions remain explicit, never an assumed delivered total.
+    %% Price and reported stock are nonnegative when known. NULL means unknown; an explicit zero stock report means none available at its report time.
+    %% A known price or stock report requires its matching update timestamp; display those times with the public facts.
+    %% price_updated_at and stock_updated_at track their own facts/reconfirmations; generic description edits must not refresh either timestamp.
+    %% Price is per listing Unit and reported_stock_quantity uses that same Unit; a unit change must reconfirm/restate or clear affected values, never reinterpret old numbers silently.
+    %% Catalog stock is supplier-reported, not a warehouse ledger, stock reservation, guaranteed availability or automatic checkout authority.
+    %% RFQItem.source_listing_id optionally records catalog origin; free-entry RFQ items do not require a listing.
+    %% Catalog shortcut retains exactly the selected supplier for its initial RFQ invitations; do not mix listing suppliers into that shortcut's basket.
+    %% Copy catalog names/specifications as initial RFQ snapshots for buyer review; buyer supplies authorized jobsite, requested quantity and delivery window.
+    %% Subsequent catalog/specification/price/stock edits never rewrite saved RFQ items, confirmed QuoteVersions or PORevision snapshots.
+    %% An indicative listing price is never auto-confirmed as an RFQ quote; supplier reconfirms project-specific quantities, cost and delivery promise through the existing quote workflow.
+    %% Public reads expose only eligible listing/catalog and approved public supplier information, not private RFQs, quotes, outcome history or verification evidence.
+    %% List/filter/search pages derive from these records; no extra PublicListings/ListingEditor summary table, image system or reservation workflow is added here.
 ```
