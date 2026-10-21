@@ -2,6 +2,8 @@
 
 This ER model covers the main data used by the Contractor menu: RFQs and quotes, purchase orders, deliveries and inspections, payments and returns, supplier history, and organization settings. The Supplier menu is being developed. RFQ invitations and Invited RFQ detail use `SupplierMembership` for supplier representation; Quote editor uses draft and submitted `QuoteVersion` records with `created_at`, immutable submitted contents, and explicit supplier confirmation.
 
+Supplier Purchase orders uses issued revision snapshots, supplier responses in `POIssue`, and dated `ShipmentDeclaration` records. Payments and payouts adds provider recipient accounts, processing charges/credits, payout movements and net-cash allocations; buyer payment, Hub fees and actual supplier transfers remain separate evidence.
+
 ```mermaid
 erDiagram
     direction LR
@@ -418,7 +420,7 @@ erDiagram
     %% Fee base excludes tax, freight and other charges; rate and provider terms remain unset.
     %% Final full refund reverses the remaining original fee including rounding residue.
     %% Store money as exact DECIMAL; no card credentials; actor permissions use existing scoped assignments.
-    %% This extension does not complete supplier payout/processing-charge models or full-product coverage.
+    %% Supplier payout/processing-charge evidence is defined below; full-product coverage remains incomplete.
 
 %% Deliveries and inspections; replacement handling is excluded by the current scope decision.
     %% Actor FKs remain listed without adding more AppUser connectors.
@@ -776,4 +778,113 @@ erDiagram
     %% A newer submitted quote does not silently replace RFQSelection, PORevision snapshots or an already acknowledged obligation.
     %% Expiry/withdrawal affects future offer eligibility without rewriting an existing PO's preserved terms.
     %% After submission return to the owning Invited RFQ detail, showing only this supplier's authorized version history.
+
+    %% Supplier Purchase orders and Purchase order detail: issued revisions, responses and dated declarations.
+    %% Buyer and supplier share PurchaseOrder/PORevision records; supplier pages are scoped views, not duplicate order entities.
+    %% Supplier lists/details require active SupplierMembership matching PurchaseOrder.supplier_id on every read and action.
+    %% Expose only revisions issued to that supplier through POIssue; buyer-only drafts and internal approval work remain private.
+    %% RFQ InvitationToken expiry/revocation does not itself withdraw an issued PO or terminate supplier PO access.
+    %% Linked RFQ/quote/receipt/payment records still enforce their own scope; a PO link never bypasses another record's access rules.
+    %% Show the issued candidate awaiting response separately from the previously acknowledged effective revision and issued history.
+    %% Needs acknowledgement derives from an issued candidate with NULL response_decision; accepted/declined labels derive from POIssue.
+    %% POIssue response_decision is ACCEPTED or DECLINED, with responded_by_user_id/responded_at recorded atomically; response_reason is optional.
+    %% Only the exact pending issued candidate may receive its one final response; serialize competing replies and effective-revision changes.
+    %% Retrying the same response is idempotent; a conflicting second final response cannot overwrite the first.
+    %% Supplier cannot edit issued quantities, prices, specifications, charges or contractual promises in place.
+    %% Material changes require a new revision with fresh buyer approval, issue and supplier acceptance.
+    %% A declined or unanswered successor does not erase or replace the previous acknowledged effective commitment.
+    %% Render the supplier-facing detail from that exact PORevision, its lines and charges, not current mutable RFQ/quote/master values.
+    %% Supplier ShipmentDeclaration actions require authority for the same supplier and an acknowledged revision relevant to that work.
+    %% Preserve each declaration's revision context when a successor becomes effective; never relabel old declarations as belonging to the new revision.
+    %% Display PREPARING/DISPATCHED/DELAYED as dated supplier statements in a timeline, separate from physical receipts and inspections.
+    %% Declaration corrections append a new same-PO record linked by corrects_declaration_id; preserve the original statement, actor and times.
+    %% Estimated arrival dates are supplier estimates and do not amend contractual promised_delivery_start/end.
+    %% DISPATCHED neither creates Delivery nor proves arrival, acceptance, payment, payout or completion.
+    %% Supplier PO screens add no replacement workflow, live tracking, redundant list-status columns or additional entity tables.
+
+    %% Supplier Payments and payouts: US19 provider-backed proceeds and separate deductions.
+    Supplier ||--o{ SupplierProviderAccount : receives_through
+    PaymentProviderAccount ||--o{ SupplierProviderAccount : registers_recipient
+    SupplierProviderAccount ||--o{ Payout : receives_movements
+    ProviderTransaction ||--o{ ProviderCharge : incurs
+    ProviderEvent ||--o{ ProviderCharge : evidences
+    Refund o|--o{ ProviderCharge : related_charge_adjustment
+    ProviderCharge o|--o{ ProviderCharge : reversed_by
+    ProviderEvent ||--o{ Payout : latest_evidence_for
+    Payout o|--o{ Payout : reversed_by
+    Payout ||--o{ PayoutAllocation : allocates
+    PaymentAllocation ||--o{ PayoutAllocation : settled_by
+    Refund o|--o{ PayoutAllocation : related_adjustment
+
+    SupplierProviderAccount {
+        int supplier_provider_account_id PK
+        int supplier_id FK
+        int provider_account_id FK
+        string recipient_reference
+        string status
+        datetime verified_at "optional until evidence verified"
+    }
+    ProviderCharge {
+        int provider_charge_id PK
+        int transaction_id FK
+        string provider_charge_key UK "provider/account scoped"
+        string entry_type "CHARGE or CREDIT"
+        decimal amount
+        int provider_event_id FK
+        int refund_id FK "optional; related refund"
+        int reverses_charge_id FK "optional; original charge"
+    }
+    Payout {
+        int payout_id PK
+        int supplier_provider_account_id FK
+        string provider_payout_key UK "provider/account scoped movement identity"
+        string movement_type "PAYOUT or REVERSAL"
+        decimal amount
+        string currency_code
+        string status
+        datetime paid_at "optional; provider-confirmed success time"
+        int last_event_id FK
+        int reverses_payout_id FK "optional; original payout"
+    }
+    PayoutAllocation {
+        int payout_allocation_id PK
+        int payout_id FK
+        int payment_allocation_id FK
+        decimal amount
+        int refund_id FK "optional; related adjustment"
+    }
+
+    %% UNIQUE SupplierProviderAccount(provider_account_id,recipient_reference); retain recipient identity used by historical payouts.
+    %% Do not reassign a recipient with payout history to another supplier. Store provider references, not raw banking credentials.
+    %% Recipient status/verified_at follow verified onboarding evidence; missing verification is not treated as verified.
+    %% ProviderCharge contains verified provider charge/credit facts, separate from CommissionEntry Hub fees and any estimates.
+    %% Charge currency/account/supplier derive from ProviderTransaction and its original PO; referenced event must match that provider/account.
+    %% Provider charge and payout movement keys are unique within their provider/account scope; use stable authoritative movement identities.
+    %% CHARGE/CREDIT amounts are nonnegative; derive their deduction sign from entry_type. Corrections append facts, not overwrite original charges.
+    %% A credit linked by reverses_charge_id must match the original source/account/currency; cap matched reversals against that charge.
+    %% Refund success does not imply provider-processing-charge credit; require separate verified evidence of any refunded processing cost.
+    %% A Payout row is created/updated from verified provider evidence, not from buyer payment success or an uploaded payment slip.
+    %% Payout statuses: PENDING/PROCESSING/SUCCEEDED/FAILED. Unknown provider states remain explicit reconciliation exceptions.
+    %% Only verified successful transfers qualify as actual supplier cash movement; initiated/pending amounts remain pending.
+    %% paid_at stays unknown until the provider supplies a success time; occurred/received timestamps remain in ProviderEvent.
+    %% last_event_id tracks current verified evidence; retain all original ProviderEvents and reject stale or contradictory state changes.
+    %% Retrying delivery of a provider event updates the same payout, never creates another paid movement or allocation.
+    %% Payout amounts are nonnegative; movement_type supplies direction. REVERSAL requires a valid original PAYOUT with the same recipient/currency.
+    %% Record provider-confirmed full/partial clawbacks as separate reversal movements; never delete or subtract twice from the original payout.
+    %% A requested or confirmed buyer refund does not itself establish a payout reversal or a provider fee credit.
+    %% UNIQUE PayoutAllocation(payout_id,payment_allocation_id); positive allocation amounts represent matched NET transfer cash, not goods quantity or gross payment.
+    %% One payout may combine multiple payments/POs; one payment allocation may be settled through multiple payouts.
+    %% All allocation sources, recipient, event, currency and provider/account must agree; source PO supplier must match the payout recipient supplier.
+    %% Refund references identify verified related adjustments under the same supplier/account/currency; retain the original payment/refund evidence.
+    %% For a matched payout, allocation amounts sum to its movement amount. Pending/unmatched payouts may have zero allocations and show reconciliation status.
+    %% Cap matched reversals cumulatively against the original payout and original source allocations under transactional locks.
+    %% Reserve amounts in live pending movements; confirmed failed attempts may release reservations only after authoritative reconciliation.
+    %% Preserve unexpected raw provider events as exceptions; do not fabricate source allocations or silently discard real money movements to fit a cap.
+    %% PayoutAllocation.amount is already NET cash: never subtract ProviderCharge or CommissionEntry a second time from actual payout totals.
+    %% Present gross buyer payment, confirmed refunds, provider charges/credits, Hub fee charges/reversals, pending payout and actual net transfers separately.
+    %% Reconcile against provider evidence; missing deductions, holds or allocation evidence remain unknown/named differences, not assumed zero.
+    %% CommissionEntry is the Hub fee ledger; claiming actual provider deduction requires matching provider evidence, not a local fee calculation alone.
+    %% Hub fee rate and provider charge/refund/settlement conventions remain unset until provider contract confirmation; no universal rate is assumed.
+    %% SupplierMembership and source ownership scope every read/aggregation/drilldown; hide other suppliers' transactions and recipient data.
+    %% Payments and payouts is a computed evidence view, not a new summary table. Full US21 statement/export and full split-instruction workflows remain separate work.
 ```
