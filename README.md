@@ -25,7 +25,7 @@ flowchart TD
     LOGIN["Sign In<br/>(Arn.)"]
 
     HOME --> CATALOG
-    HOME -->|Search| RESULTS
+    HOME --> RESULTS
     HOME --> LOGIN
     CATALOG --> CATEGORY
     CATEGORY --> SPEC
@@ -129,9 +129,9 @@ flowchart TD
     classDef page fill:#ffffff,stroke:#64748b,color:#0f172a;
     classDef expansion fill:#f1f5f9,stroke:#64748b,color:#334155,stroke-dasharray:5 3;
     class B_MENU,S_MENU,O_MENU menu;
-    class HOME,CATALOG,RESULTS,CATEGORY,SPEC,B_CREATE,B_RFQ,B_ORDER,B_RECEIPT,B_INSPECTION,B_CHECKOUT,B_PAYMENT,B_RETURN,B_HISTORY,B_OUTCOME,B_SETTINGS,S_RFQ,S_QUOTE,S_ORDER,S_PAYMENTS,O_FEES,O_FEE,SUPPLIER_PROFILE,COMPARE,QUICK_RFQ core;
+    class HOME,CATALOG,RESULTS,CATEGORY,SPEC,B_CREATE,B_RFQ,B_ORDER,B_RECEIPT,B_INSPECTION,B_CHECKOUT,B_PAYMENT,B_RETURN,B_HISTORY,B_OUTCOME,B_SETTINGS,S_RFQ,S_QUOTE,S_ORDER,S_PAYMENTS,O_FEES,O_FEE core;
     class LOGIN,B_DASH,B_RFQS,B_ORDERS,B_RECEIVING,B_PAYMENTS,S_INVITATIONS,S_ORDERS page;
-    class B_JOBSITES,S_LISTINGS,S_EDITOR,O_ONBOARDING,O_VERIFICATION expansion;
+    class B_JOBSITES,S_LISTINGS,S_EDITOR,O_ONBOARDING,O_VERIFICATION,SUPPLIER_PROFILE,COMPARE,QUICK_RFQ expansion;
     class KEY_CORE core;
     class KEY_NAV page;
     class KEY_LATER expansion;
@@ -151,3 +151,17 @@ flowchart TD
 | Large pale frame | Contractor, supplier, or platform workspace. |
 
 The upper-right key repeats the three page colors. These are sitemap priorities, not a change to the agreed 15-story P0 release scope. The key boxes are examples, not website pages.
+
+
+## MVP vs. Full Product Feature Comparison
+
+| Module / Area | Feature Scope | MVP (Core Scope) | Full Product (Expansion Scope) |
+|---|---|---|---|
+| **Contractor Team** | Dashboard & Setup | `Dashboard`, `Organization settings` | `Jobsite settings` |
+| **Contractor Team** | RFQ & Purchasing | `RFQs`, `Create RFQ`, `RFQ detail`, `Purchase orders`, `Purchase order detail` | — |
+| **Contractor Team** | Receiving & Payments | `Deliveries and inspections`, `Receipt detail`, `Inspection`, `Payments and returns`, `Accepted-portion checkout`, `Payment detail`, `Return and refund detail` | — |
+| **Contractor Team** | Vendor Management | `Supplier history`, `Supplier outcome detail` | — |
+| **Supplier Team** | Quoting & Orders | `RFQ invitations`, `Invited RFQ detail`, `Quote editor`, `Purchase orders`, `Purchase order detail` | — |
+| **Supplier Team** | Financials & Catalog | `Payments and payouts` | `Public listings`, `Listing editor` |
+| **Platform Admin** | Financial Ledger | `Hub fee ledger`, `Fee entry detail` | — |
+| **Platform Admin** | Vendor Onboarding | — | `Supplier onboarding`, `Supplier verification detail` |
