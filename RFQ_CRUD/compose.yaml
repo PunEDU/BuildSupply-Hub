@@ -1,0 +1,21 @@
+name: assignment4
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-buildsupply_assignment4}
+      MYSQL_USER: ${DB_USER:-buildsupply_demo}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Copy .env.example to .env first}
+      MYSQL_RANDOM_ROOT_PASSWORD: 'yes'
+    ports:
+      - '127.0.0.1:${DB_PORT:-33074}:3306'
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'mysql --protocol=tcp -h 127.0.0.1 -u"$$MYSQL_USER" -p"$$MYSQL_PASSWORD" "$$MYSQL_DATABASE" -e "SELECT 1 FROM unit LIMIT 1" > /dev/null 2>&1']
+      interval: 3s
+      timeout: 4s
+      retries: 40
+volumes:
+  mysql-data:

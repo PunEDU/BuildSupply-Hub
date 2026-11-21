@@ -1,0 +1,80 @@
+<section id="rfq-items" class="surface p-3 p-md-4" aria-labelledby="materials-heading">
+    <h2 id="materials-heading" class="h5 mb-3">Materials</h2>
+    {{#if notice}}<p class="alert alert-light border" role="status">{{notice}}</p>{{/if}}
+    {{#if items}}
+    <div class="table-responsive">
+        <table class="table materials-table align-middle mb-0">
+            <thead><tr><th scope="col">Line</th><th scope="col">Material</th><th scope="col">Quantity</th><th scope="col">Unit</th>{{#if isDraft}}<th scope="col">Actions</th>{{/if}}</tr></thead>
+            <tbody>
+                {{#each items}}
+                <tr>
+                    <td>{{line_no}}</td>
+                    <th scope="row" class="material-text">
+                        {{material_name}}
+                        {{#if specification_text}}<span class="d-block small text-secondary fw-normal">{{specification_text}}</span>{{/if}}
+                    </th>
+                    <td>{{#if requested_quantity}}{{requested_quantity}}{{else}}—{{/if}}</td>
+                    <td>{{#if unit_code}}{{unit_code}}{{else}}—{{/if}}</td>
+                    {{#if ../isDraft}}
+                    <td>
+                        <div class="d-flex flex-wrap gap-2">
+                            <a class="btn btn-sm btn-outline-secondary" aria-label="Edit material on line {{line_no}}"
+                                href="{{../itemsPath}}/{{rfq_item_id}}/edit#material-form"
+                                hx-get="{{../itemsPath}}/{{rfq_item_id}}/edit" hx-target="#rfq-items" hx-swap="outerHTML">Edit</a>
+                            <form method="post" action="{{../itemsPath}}/{{rfq_item_id}}/delete"
+                                hx-post="{{../itemsPath}}/{{rfq_item_id}}/delete" hx-target="#rfq-items" hx-swap="outerHTML">
+                                <input type="hidden" name="lock_version" value="{{lock_version}}">
+                                <button class="btn btn-sm btn-outline-danger" type="submit" aria-label="Remove material on line {{line_no}}">Remove</button>
+                            </form>
+                        </div>
+                    </td>
+                    {{/if}}
+                </tr>
+                {{/each}}
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <p class="text-secondary mb-0">No materials yet.</p>
+    {{/if}}
+
+    {{#if isDraft}}
+    <form id="material-form" class="border-top mt-3 pt-3" method="post" action="{{itemAction}}" {{#if errors}}aria-describedby="material-errors"{{/if}}
+        hx-post="{{itemAction}}" hx-target="#rfq-items" hx-swap="outerHTML" hx-disabled-elt="find button[type='submit']">
+        <h3 class="h6 mb-3">{{#if editing}}Edit material on line {{editing.line_no}}{{else}}Add material{{/if}}</h3>
+        {{#if editing}}<input type="hidden" name="lock_version" value="{{editing.lock_version}}">{{/if}}
+        {{#if errors}}<p id="material-errors" class="alert alert-danger py-2" role="alert">Check the highlighted material fields.</p>{{/if}}
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label" for="material-name">Material name</label>
+                <input class="form-control" id="material-name" name="material_name" required maxlength="120" value="{{values.material_name}}" {{#if errors.material_name}}aria-invalid="true" aria-describedby="material-name-error"{{/if}}>
+                {{#if errors.material_name}}<p class="field-error" id="material-name-error">{{errors.material_name}}</p>{{/if}}
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label" for="material-quantity">Quantity</label>
+                <input class="form-control" id="material-quantity" name="requested_quantity" type="number" min="0.0001" max="9999999999.9999" step="0.0001" value="{{values.requested_quantity}}" {{#if errors.requested_quantity}}aria-invalid="true" aria-describedby="quantity-error"{{/if}}>
+                {{#if errors.requested_quantity}}<p class="field-error" id="quantity-error">{{errors.requested_quantity}}</p>{{/if}}
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label" for="material-unit">Unit</label>
+                <select class="form-select" id="material-unit" name="unit_id" {{#if errors.unit_id}}aria-invalid="true" aria-describedby="unit-error"{{/if}}>
+                    <option value="">Choose later</option>
+                    {{#each units}}<option value="{{unit_id}}" {{#if (equal unit_id ../values.unit_id)}}selected{{/if}}>{{unit_code}}</option>{{/each}}
+                </select>
+                {{#if errors.unit_id}}<p class="field-error" id="unit-error">{{errors.unit_id}}</p>{{/if}}
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="material-spec">Specification</label>
+                <textarea class="form-control" id="material-spec" name="specification_text" rows="2" maxlength="500" {{#if errors.specification_text}}aria-invalid="true" aria-describedby="spec-error"{{/if}}>{{values.specification_text}}</textarea>
+                {{#if errors.specification_text}}<p class="field-error" id="spec-error">{{errors.specification_text}}</p>{{/if}}
+            </div>
+        </div>
+        <div class="d-flex gap-2 mt-3">
+            <button class="btn btn-primary" type="submit">{{#if editing}}Save material{{else}}Add material{{/if}}</button>
+            {{#if editing}}
+            <a class="btn btn-outline-secondary" href="{{rfqPath}}#rfq-items" hx-get="{{itemsPath}}" hx-target="#rfq-items" hx-swap="outerHTML">Cancel</a>
+            {{/if}}
+        </div>
+    </form>
+    {{/if}}
+</section>

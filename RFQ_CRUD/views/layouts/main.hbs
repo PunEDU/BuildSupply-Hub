@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409|422","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+    <title>{{title}} | BuildSupply Hub</title>
+    <link rel="stylesheet" href="/assets/bootstrap.css">
+    <link rel="stylesheet" href="/assets/site.css">
+    <script src="/assets/htmx.js" defer></script>
+</head>
+<body>
+    <header class="site-header">
+        <div class="container app-width d-flex flex-wrap align-items-center justify-content-between gap-2 py-3">
+            <a class="brand" href="/contractor/rfqs">BuildSupply Hub</a>
+            <span class="workspace-label">Contractor workspace</span>
+        </div>
+    </header>
+    <main class="container app-width py-4 py-md-5">
+        {{{body}}}
+    </main>
+</body>
+</html>

@@ -1,0 +1,45 @@
+:root {
+    --ink: #182b2a;
+    --accent: #176454;
+    --border: #dbe3df;
+}
+
+body { background: #f4f7f5; color: var(--ink); }
+a { color: var(--accent); }
+.app-width { max-width: 1060px; }
+.site-header { background: #142e2a; color: white; }
+.brand { color: white; font-size: 1.15rem; font-weight: 700; text-decoration: none; }
+.brand:hover { color: #a5e0cc; }
+.workspace-label { color: #c4ded6; font-size: .875rem; }
+.back-link { font-weight: 600; }
+h1 { font-size: clamp(1.65rem, 5vw, 2.4rem); font-weight: 700; letter-spacing: -.035em; }
+.rfq-number, dd, .material-text { overflow-wrap: anywhere; }
+.material-text { min-width: 10rem; }
+.surface { border: 1px solid var(--border); border-radius: .8rem; background: white; }
+.form-surface { max-width: 750px; }
+.status { background: #e0efe8; color: #154c40; border-radius: .35rem; padding: .2rem .5rem; font-size: .75rem; font-weight: 700; }
+.table > :not(caption) > * > * { padding: .85rem; border-color: #e6ece9; }
+.table thead th { background: #ecf3ef; color: var(--ink); font-size: .875rem; }
+.table tbody tr:last-child > * { border-bottom: 0; }
+.btn-primary {
+    --bs-btn-bg: #176454;
+    --bs-btn-border-color: #176454;
+    --bs-btn-hover-bg: #104f43;
+    --bs-btn-hover-border-color: #104f43;
+    --bs-btn-active-bg: #104f43;
+    --bs-btn-active-border-color: #104f43;
+    --bs-btn-disabled-bg: #507d71;
+    --bs-btn-disabled-border-color: #507d71;
+}
+.field-error { color: #9f2130; font-size: .875rem; margin: .25rem 0 0; }
+[aria-invalid="true"] { border-color: #9f2130; }
+
+@media (max-width: 575.98px) {
+    .materials-table { table-layout: fixed; }
+    .materials-table > :not(caption) > * > * { padding: .6rem .3rem; overflow-wrap: anywhere; }
+    .materials-table .material-text { min-width: 0; }
+    .materials-table th:nth-child(1) { width: 2.15rem; }
+    .materials-table th:nth-child(3) { width: 4.1rem; }
+    .materials-table th:nth-child(4) { width: 2.5rem; }
+    .materials-table th:nth-child(5) { width: 4.5rem; }
+}

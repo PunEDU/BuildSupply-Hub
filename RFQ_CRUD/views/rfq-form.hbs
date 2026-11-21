@@ -1,0 +1,32 @@
+<a class="back-link" href="{{#if rfq}}/contractor/rfqs/{{rfq.rfq_id}}{{else}}/contractor/rfqs{{/if}}">← {{#if rfq}}Back to RFQ{{else}}All RFQs{{/if}}</a>
+<h1 class="mt-3 mb-4">{{title}}</h1>
+<form action="{{action}}" method="post" class="surface form-surface p-3 p-md-4">
+    {{#if rfq}}<input type="hidden" name="lock_version" value="{{rfq.lock_version}}">{{/if}}
+    <p class="text-secondary">You can save an empty draft and fill in the details later. Enter delivery times in the jobsite’s local time.</p>
+    <div class="mb-3">
+        <label class="form-label" for="jobsite">Jobsite</label>
+        <select class="form-select" id="jobsite" name="jobsite_id" {{#if errors.jobsite_id}}aria-invalid="true" aria-describedby="jobsite-error"{{/if}}>
+            <option value="">Choose later</option>
+            {{#each sites}}<option value="{{jobsite_id}}" {{#if (equal jobsite_id ../values.jobsite_id)}}selected{{/if}}>{{site_name}}</option>{{/each}}
+        </select>
+        {{#if errors.jobsite_id}}<p class="field-error" id="jobsite-error">{{errors.jobsite_id}}</p>{{/if}}
+    </div>
+    <div class="mb-3">
+        <label class="form-label" for="delivery-address">Delivery address</label>
+        <input class="form-control" id="delivery-address" name="delivery_address_text" maxlength="255" value="{{values.delivery_address_text}}" {{#if errors.delivery_address_text}}aria-invalid="true" aria-describedby="address-error"{{/if}}>
+        {{#if errors.delivery_address_text}}<p class="field-error" id="address-error">{{errors.delivery_address_text}}</p>{{/if}}
+    </div>
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <label class="form-label" for="delivery-start">Delivery window start</label>
+            <input class="form-control" id="delivery-start" type="datetime-local" name="requested_delivery_start" value="{{values.requested_delivery_start}}" {{#if errors.requested_delivery_start}}aria-invalid="true" aria-describedby="start-error"{{/if}}>
+            {{#if errors.requested_delivery_start}}<p class="field-error" id="start-error">{{errors.requested_delivery_start}}</p>{{/if}}
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="delivery-end">Delivery window end</label>
+            <input class="form-control" id="delivery-end" type="datetime-local" name="requested_delivery_end" value="{{values.requested_delivery_end}}" {{#if errors.requested_delivery_end}}aria-invalid="true" aria-describedby="end-error"{{/if}}>
+            {{#if errors.requested_delivery_end}}<p class="field-error" id="end-error">{{errors.requested_delivery_end}}</p>{{/if}}
+        </div>
+    </div>
+    <button class="btn btn-primary" type="submit">Save draft</button>
+</form>

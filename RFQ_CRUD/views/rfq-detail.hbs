@@ -1,0 +1,35 @@
+<a class="back-link" href="/contractor/rfqs">← All RFQs</a>
+<div class="d-flex flex-wrap gap-3 align-items-center justify-content-between mt-3 mb-4">
+    <div>
+        <span class="status">{{rfq.status}}</span>
+        <h1 class="mt-2 mb-0 rfq-number">{{rfq.rfq_number}}</h1>
+    </div>
+    {{#if isDraft}}<a class="btn btn-outline-secondary" href="{{rfqPath}}/edit">Edit RFQ</a>{{/if}}
+</div>
+
+<section class="surface p-3 p-md-4 mb-4" aria-labelledby="delivery-heading">
+    <h2 id="delivery-heading" class="h5 mb-3">Delivery details</h2>
+    <dl class="row mb-0">
+        <dt class="col-sm-4">Jobsite</dt>
+        <dd class="col-sm-8">{{#if rfq.site_name}}{{rfq.site_name}}{{else}}Unassigned{{/if}}</dd>
+        <dt class="col-sm-4">Delivery address</dt>
+        <dd class="col-sm-8">{{#if rfq.delivery_address_text}}{{rfq.delivery_address_text}}{{else}}—{{/if}}</dd>
+        <dt class="col-sm-4">Window start</dt>
+        <dd class="col-sm-8">{{#if rfq.requested_delivery_start}}{{rfq.requested_delivery_start}}{{else}}—{{/if}}</dd>
+        <dt class="col-sm-4">Window end</dt>
+        <dd class="col-sm-8 mb-0">{{#if rfq.requested_delivery_end}}{{rfq.requested_delivery_end}}{{else}}—{{/if}}</dd>
+    </dl>
+</section>
+
+{{> rfq-items}}
+
+{{#if isDraft}}
+<details class="mt-4">
+    <summary class="text-danger">Delete this draft</summary>
+    <form class="mt-2" method="post" action="{{rfqPath}}/delete">
+        <p class="mb-2">Deleting this draft also removes all its materials.</p>
+        <input type="hidden" name="lock_version" value="{{rfq.lock_version}}">
+        <button class="btn btn-outline-danger" type="submit">Confirm delete draft</button>
+    </form>
+</details>
+{{/if}}
